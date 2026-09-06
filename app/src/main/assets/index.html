@@ -10,9 +10,13 @@
       color-scheme: dark;
     }
 
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       background: #111827;
       color: #f9fafb;
     }
@@ -39,15 +43,15 @@
       padding: 10px;
       position: sticky;
       top: 0;
+      z-index: 20;
       background: #111827;
-      z-index: 10;
     }
 
     button {
       border: 0;
       border-radius: 10px;
       padding: 11px 8px;
-      font-weight: 650;
+      font-weight: 700;
       background: #374151;
       color: white;
     }
@@ -84,17 +88,17 @@
 
     input, select {
       width: 100%;
-      box-sizing: border-box;
-      margin: 6px 0 10px;
       padding: 11px;
+      margin: 6px 0 10px;
       border-radius: 9px;
       border: 1px solid #4b5563;
       background: #111827;
       color: white;
     }
 
-    .galaxy-list {
-      max-height: 320px;
+    .galaxy-list,
+    .cohort-list {
+      max-height: 330px;
       overflow-y: auto;
       border: 1px solid #374151;
       border-radius: 10px;
@@ -114,15 +118,16 @@
       background: #374151;
     }
 
-    .metric-grid {
+    .metric-grid,
+    .diag-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;
     }
 
     .metric {
-      padding: 10px;
       background: #111827;
+      padding: 10px;
       border-radius: 10px;
     }
 
@@ -133,7 +138,12 @@
 
     .metric .value {
       font-size: 18px;
-      margin-top: 2px;
+      margin-top: 3px;
+    }
+
+    .small {
+      color: #9ca3af;
+      font-size: 12px;
     }
 
     svg {
@@ -141,12 +151,13 @@
       height: 260px;
       background: #111827;
       border-radius: 10px;
-      overflow: visible;
     }
 
-    .small {
-      font-size: 12px;
-      color: #9ca3af;
+    .cohort-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
     }
   </style>
 </head>
@@ -156,8 +167,8 @@
 <header>
   <h1>SPARC Workbench</h1>
   <p>
-    Explore, validate, visualize, and export SPARC galaxy
-    rotation-curve data.
+    Explore, diagnose, classify, visualize, and export
+    SPARC galaxy rotation-curve data.
   </p>
 </header>
 
@@ -174,8 +185,10 @@
 
   <div class="card">
     <h2>SPARC Dataset</h2>
+
     <p>
-      Download and cache the official SPARC source tables on this device.
+      Download and cache the official SPARC source tables
+      directly on this device.
     </p>
 
     <button class="primary" onclick="loadSparc()">
@@ -204,14 +217,27 @@
   </div>
 
   <div id="detailCard" class="card hidden">
+
     <h2 id="galaxyTitle">Galaxy</h2>
 
     <div id="metricGrid" class="metric-grid"></div>
 
-    <h3 style="margin-top:16px">Rotation Curve</h3>
-    <svg id="curveChart" viewBox="0 0 600 260"></svg>
+    <h3 style="margin-top:16px">
+      Rotation Curve
+    </h3>
 
-    <div style="margin-top:12px">
+    <svg
+      id="curveChart"
+      viewBox="0 0 600 260">
+    </svg>
+
+    <h3 style="margin-top:16px">
+      Diagnostics
+    </h3>
+
+    <div id="diagGrid" class="diag-grid"></div>
+
+    <div style="margin-top:14px">
       <button
         class="secondary"
         onclick="exportSelectedGalaxy()">
@@ -230,19 +256,39 @@
   <div class="card">
     <h2>Scientific Cohorts</h2>
 
-    <p>
-      The native cohort engine will be connected next.
-      This section is reserved for:
-    </p>
+    <div class="cohort-buttons">
 
-    <ul>
-      <li>Quality-1</li>
-      <li>BTFR-ready</li>
-      <li>Bulgeless</li>
-      <li>Extended rotation curves</li>
-      <li>Inclination-safe</li>
-      <li>UIG benchmark</li>
-    </ul>
+      <button onclick="loadCohort('quality_1')">
+        Quality 1
+      </button>
+
+      <button onclick="loadCohort('btfr_ready')">
+        BTFR Ready
+      </button>
+
+      <button onclick="loadCohort('bulgeless')">
+        Bulgeless
+      </button>
+
+      <button onclick="loadCohort('extended_rotation_curve')">
+        Extended Curves
+      </button>
+
+      <button onclick="loadCohort('inclination_safe')">
+        Inclination Safe
+      </button>
+
+      <button onclick="loadCohort('uig_benchmark_v1')">
+        UIG Benchmark v1
+      </button>
+
+    </div>
+
+    <div id="cohortInfo" class="status">
+      Choose a cohort.
+    </div>
+
+    <div id="cohortList" class="cohort-list"></div>
   </div>
 
 </section>
@@ -254,9 +300,8 @@
     <h2>Export</h2>
 
     <p>
-      Current native export supports per-galaxy CSV.
-      Custom model export profiles will be connected after
-      the data browser is verified.
+      v1.2 supports per-galaxy native CSV export.
+      The full customizable export-profile builder is next.
     </p>
 
     <div id="exportGalaxyLabel" class="status">
@@ -283,274 +328,835 @@
 
 
 <script>
-  let catalog = [];
-  let selectedGalaxy = null;
-  let selectedCurve = [];
 
-  function showTab(id) {
-    for (const section of document.querySelectorAll("main section")) {
-      section.classList.add("hidden");
-    }
+let catalog = [];
+let selectedGalaxy = null;
+let selectedCurve = [];
+let selectedMeta = {};
+let selectedDiag = {};
 
-    document.getElementById(id).classList.remove("hidden");
+function showTab(id) {
+
+  document
+    .querySelectorAll("main section")
+    .forEach(section =>
+      section.classList.add("hidden")
+    );
+
+  document
+    .getElementById(id)
+    .classList.remove("hidden");
+}
+
+
+function nativeAvailable() {
+
+  return typeof AndroidBridge !== "undefined";
+}
+
+
+function loadSparc() {
+
+  const el =
+    document.getElementById("loadStatus");
+
+  if (!nativeAvailable()) {
+
+    el.textContent =
+      "Android native bridge is not available.";
+
+    return;
   }
 
-  function nativeAvailable() {
-    return typeof AndroidBridge !== "undefined";
-  }
+  el.textContent =
+    "Downloading/loading SPARC data...";
 
-  function loadSparc() {
-    const el = document.getElementById("loadStatus");
+  AndroidBridge.loadSparcData();
+}
 
-    if (!nativeAvailable()) {
-      el.textContent = "Android native bridge is not available.";
-      return;
-    }
 
-    el.textContent = "Downloading/loading SPARC data...";
+window.onSparcLoaded =
+function(jsonText) {
 
-    AndroidBridge.loadSparcData();
-  }
+  let result = {};
 
-  window.onSparcLoaded = function(jsonText) {
-    let result;
+  try {
 
-    try {
-      result = JSON.parse(jsonText);
-    } catch (e) {
-      document.getElementById("loadStatus").textContent =
+    result =
+      JSON.parse(jsonText);
+
+  } catch (e) {
+
+    document
+      .getElementById("loadStatus")
+      .textContent =
         "Could not parse native response.";
-      return;
-    }
 
-    if (!result.ok) {
-      document.getElementById("loadStatus").textContent =
-        "Load failed:\n" + result.error;
-      return;
-    }
+    return;
+  }
 
-    document.getElementById("loadStatus").textContent =
+  if (!result.ok) {
+
+    document
+      .getElementById("loadStatus")
+      .textContent =
+        "Load failed:\n" +
+        result.error;
+
+    return;
+  }
+
+  document
+    .getElementById("loadStatus")
+    .textContent =
       "SPARC data loaded successfully.";
 
-    loadCatalog();
-  };
+  loadCatalog();
+};
 
-  function loadCatalog() {
-    if (!nativeAvailable()) {
-      return;
-    }
 
-    let raw = AndroidBridge.getGalaxyCatalog();
+function loadCatalog() {
 
-    try {
-      catalog = JSON.parse(raw);
-    } catch (e) {
-      catalog = [];
-    }
+  try {
 
-    document.getElementById("catalogInfo").textContent =
-      catalog.length + " catalog entries loaded.";
+    catalog =
+      JSON.parse(
+        AndroidBridge.getGalaxyCatalog()
+      );
 
-    document.getElementById("healthStatus").textContent =
-      "Catalog entries detected: " + catalog.length;
+  } catch (e) {
+
+    catalog = [];
+  }
+
+  document
+    .getElementById("catalogInfo")
+    .textContent =
+      catalog.length +
+      " catalog entries loaded.";
+
+  document
+    .getElementById("healthStatus")
+    .textContent =
+      "Catalog entries detected: " +
+      catalog.length +
+      "\nExpected official SPARC sample: 175" +
+      "\nCatalog status: " +
+      (
+        catalog.length === 175
+          ? "PASS"
+          : "CHECK"
+      );
+
+  renderCatalog(catalog);
+}
+
+
+function filterCatalog() {
+
+  const q =
+    document
+      .getElementById("searchBox")
+      .value
+      .trim()
+      .toLowerCase();
+
+  if (!q) {
 
     renderCatalog(catalog);
+
+    return;
   }
 
-  function filterCatalog() {
-    const q =
-      document.getElementById("searchBox")
-        .value
-        .trim()
-        .toLowerCase();
+  renderCatalog(
+    catalog.filter(
+      name =>
+        String(name)
+          .toLowerCase()
+          .includes(q)
+    )
+  );
+}
 
-    if (!q) {
-      renderCatalog(catalog);
-      return;
-    }
 
-    renderCatalog(
-      catalog.filter(name =>
-        String(name).toLowerCase().includes(q)
-      )
-    );
+function renderCatalog(items) {
+
+  const list =
+    document.getElementById("galaxyList");
+
+  list.innerHTML = "";
+
+  items.forEach(name => {
+
+    const row =
+      document.createElement("div");
+
+    row.className =
+      "galaxy-row";
+
+    row.textContent =
+      name;
+
+    row.onclick =
+      () => selectGalaxy(name);
+
+    list.appendChild(row);
+  });
+}
+
+
+function selectGalaxy(name) {
+
+  selectedGalaxy =
+    name;
+
+  try {
+
+    selectedCurve =
+      JSON.parse(
+        AndroidBridge
+          .getRotationCurve(name)
+      );
+
+  } catch (e) {
+
+    selectedCurve = [];
   }
 
-  function renderCatalog(items) {
-    const list = document.getElementById("galaxyList");
+  try {
 
-    list.innerHTML = "";
+    selectedMeta =
+      JSON.parse(
+        AndroidBridge
+          .getGalaxyMetadata(name)
+      );
 
-    for (const name of items) {
-      const row = document.createElement("div");
-      row.className = "galaxy-row";
-      row.textContent = name;
-      row.onclick = () => selectGalaxy(name);
-      list.appendChild(row);
-    }
+  } catch (e) {
+
+    selectedMeta = {};
   }
 
-  function selectGalaxy(name) {
-    selectedGalaxy = name;
+  try {
 
-    document.getElementById("galaxyTitle").textContent = name;
-    document.getElementById("detailCard").classList.remove("hidden");
+    selectedDiag =
+      JSON.parse(
+        AndroidBridge
+          .getDiagnostics(name)
+      );
 
-    document.getElementById("exportGalaxyLabel").textContent =
-      "Selected galaxy: " + name;
+  } catch (e) {
 
-    let raw = AndroidBridge.getRotationCurve(name);
-
-    try {
-      selectedCurve = JSON.parse(raw);
-    } catch (e) {
-      selectedCurve = [];
-    }
-
-    renderMetrics();
-    drawCurve();
+    selectedDiag = {};
   }
 
-  function renderMetrics() {
-    const grid = document.getElementById("metricGrid");
-    grid.innerHTML = "";
+  document
+    .getElementById("galaxyTitle")
+    .textContent =
+      name;
 
-    if (!selectedCurve.length) {
-      grid.innerHTML =
-        '<div class="metric">No rotation-curve rows found.</div>';
-      return;
-    }
+  document
+    .getElementById("detailCard")
+    .classList
+    .remove("hidden");
 
-    const first = selectedCurve[0];
-    const last = selectedCurve[selectedCurve.length - 1];
+  document
+    .getElementById("exportGalaxyLabel")
+    .textContent =
+      "Selected galaxy: " +
+      name;
 
-    const values = [
-      ["Points", selectedCurve.length],
-      ["Distance", first.distance_mpc + " Mpc"],
-      ["R max", last.radius_kpc + " kpc"],
-      ["V outer", last.v_obs_kms + " km/s"]
+  renderMetrics();
+
+  drawCurve();
+
+  renderDiagnostics();
+}
+
+
+function renderMetrics() {
+
+  const grid =
+    document.getElementById("metricGrid");
+
+  grid.innerHTML = "";
+
+  if (!selectedCurve.length) {
+
+    grid.innerHTML =
+      '<div class="metric">' +
+      'No rotation-curve rows found.' +
+      '</div>';
+
+    return;
+  }
+
+  const first =
+    selectedCurve[0];
+
+  const last =
+    selectedCurve[
+      selectedCurve.length - 1
     ];
 
-    for (const [label, value] of values) {
-      const box = document.createElement("div");
-      box.className = "metric";
+  const values = [
+
+    [
+      "Points",
+      selectedCurve.length
+    ],
+
+    [
+      "Distance",
+      first.distance_mpc +
+      " Mpc"
+    ],
+
+    [
+      "R max",
+      last.radius_kpc +
+      " kpc"
+    ],
+
+    [
+      "V outer",
+      last.v_obs_kms +
+      " km/s"
+    ],
+
+    [
+      "Inclination",
+      fmt(
+        selectedMeta.inclination_deg,
+        1
+      ) +
+      "°"
+    ],
+
+    [
+      "Quality",
+      selectedMeta.quality ?? "—"
+    ],
+
+    [
+      "Vflat",
+      selectedMeta.vflat_kms > 0
+        ? fmt(
+            selectedMeta.vflat_kms,
+            1
+          ) +
+          " km/s"
+        : "—"
+    ],
+
+    [
+      "Disk scale",
+      selectedMeta
+        .disk_scale_length_kpc > 0
+        ? fmt(
+            selectedMeta
+              .disk_scale_length_kpc,
+            2
+          ) +
+          " kpc"
+        : "—"
+    ]
+  ];
+
+  values.forEach(
+    ([label, value]) => {
+
+      const box =
+        document.createElement("div");
+
+      box.className =
+        "metric";
 
       box.innerHTML =
-        '<div class="label">' + label + '</div>' +
-        '<div class="value">' + value + '</div>';
+        '<div class="label">' +
+        label +
+        '</div>' +
+        '<div class="value">' +
+        value +
+        '</div>';
 
       grid.appendChild(box);
     }
+  );
+}
+
+
+function renderDiagnostics() {
+
+  const grid =
+    document.getElementById("diagGrid");
+
+  grid.innerHTML = "";
+
+  if (
+    !selectedDiag ||
+    !selectedDiag.ok
+  ) {
+
+    grid.innerHTML =
+      '<div class="metric">' +
+      'Diagnostics unavailable.' +
+      '</div>';
+
+    return;
   }
 
-  function drawCurve() {
-    const svg = document.getElementById("curveChart");
-    svg.innerHTML = "";
+  const values = [
 
-    if (!selectedCurve.length) {
-      return;
+    [
+      "Outer class",
+      selectedDiag.outer_class
+    ],
+
+    [
+      "Outer slope",
+      fmt(
+        selectedDiag
+          .outer_slope_kms_per_kpc,
+        2
+      ) +
+      " km/s/kpc"
+    ],
+
+    [
+      "Inner slope",
+      fmt(
+        selectedDiag
+          .inner_slope_kms_per_kpc,
+        2
+      ) +
+      " km/s/kpc"
+    ],
+
+    [
+      "Radial extent",
+      fmt(
+        selectedDiag
+          .radial_extent_kpc,
+        2
+      ) +
+      " kpc"
+    ],
+
+    [
+      "Median frac. error",
+      fmt(
+        selectedDiag
+          .median_fractional_velocity_error,
+        3
+      )
+    ],
+
+    [
+      "Bulge",
+      selectedDiag.bulge_present
+        ? "Present"
+        : "Absent"
+    ],
+
+    [
+      "Outer Vbar proxy",
+      fmt(
+        selectedDiag
+          .v_baryonic_proxy_outer_kms,
+        1
+      ) +
+      " km/s"
+    ],
+
+    [
+      "Obs/Vbar outer",
+      selectedDiag
+        .obs_to_baryonic_outer_ratio
+        != null
+        ? fmt(
+            selectedDiag
+              .obs_to_baryonic_outer_ratio,
+            3
+          )
+        : "—"
+    ],
+
+    [
+      "Vflat residual",
+      selectedDiag
+        .vflat_residual_kms
+        != null
+        ? fmt(
+            selectedDiag
+              .vflat_residual_kms,
+            1
+          ) +
+          " km/s"
+        : "—"
+    ]
+  ];
+
+  values.forEach(
+    ([label, value]) => {
+
+      const box =
+        document.createElement("div");
+
+      box.className =
+        "metric";
+
+      box.innerHTML =
+        '<div class="label">' +
+        label +
+        '</div>' +
+        '<div class="value">' +
+        value +
+        '</div>';
+
+      grid.appendChild(box);
     }
+  );
+}
 
-    const width = 600;
-    const height = 260;
-    const left = 45;
-    const right = 15;
-    const top = 15;
-    const bottom = 35;
 
-    let maxR = 0;
-    let maxV = 0;
+function drawCurve() {
 
-    for (const r of selectedCurve) {
-      maxR = Math.max(maxR, Number(r.radius_kpc));
-      maxV = Math.max(maxV, Number(r.v_obs_kms));
-    }
+  const svg =
+    document.getElementById(
+      "curveChart"
+    );
 
-    if (maxR <= 0) maxR = 1;
-    if (maxV <= 0) maxV = 1;
+  svg.innerHTML = "";
 
-    const plotW = width - left - right;
-    const plotH = height - top - bottom;
-
-    const NS = "http://www.w3.org/2000/svg";
-
-    const axisX = document.createElementNS(NS, "line");
-    axisX.setAttribute("x1", left);
-    axisX.setAttribute("y1", height - bottom);
-    axisX.setAttribute("x2", width - right);
-    axisX.setAttribute("y2", height - bottom);
-    axisX.setAttribute("stroke", "#6b7280");
-    svg.appendChild(axisX);
-
-    const axisY = document.createElementNS(NS, "line");
-    axisY.setAttribute("x1", left);
-    axisY.setAttribute("y1", top);
-    axisY.setAttribute("x2", left);
-    axisY.setAttribute("y2", height - bottom);
-    axisY.setAttribute("stroke", "#6b7280");
-    svg.appendChild(axisY);
-
-    let points = "";
-
-    for (const r of selectedCurve) {
-      const x =
-        left +
-        (Number(r.radius_kpc) / maxR) * plotW;
-
-      const y =
-        top +
-        plotH -
-        (Number(r.v_obs_kms) / maxV) * plotH;
-
-      points += x + "," + y + " ";
-    }
-
-    const poly = document.createElementNS(NS, "polyline");
-
-    poly.setAttribute("points", points.trim());
-    poly.setAttribute("fill", "none");
-    poly.setAttribute("stroke", "#60a5fa");
-    poly.setAttribute("stroke-width", "3");
-
-    svg.appendChild(poly);
-
-    for (const r of selectedCurve) {
-      const x =
-        left +
-        (Number(r.radius_kpc) / maxR) * plotW;
-
-      const y =
-        top +
-        plotH -
-        (Number(r.v_obs_kms) / maxV) * plotH;
-
-      const c = document.createElementNS(NS, "circle");
-
-      c.setAttribute("cx", x);
-      c.setAttribute("cy", y);
-      c.setAttribute("r", "3");
-      c.setAttribute("fill", "#93c5fd");
-
-      svg.appendChild(c);
-    }
+  if (!selectedCurve.length) {
+    return;
   }
 
-  function exportSelectedGalaxy() {
-    const el = document.getElementById("exportStatus");
+  const width = 600;
+  const height = 260;
+  const left = 45;
+  const right = 15;
+  const top = 15;
+  const bottom = 35;
 
-    if (!selectedGalaxy) {
-      el.textContent = "Select a galaxy first.";
-      return;
-    }
+  let maxR = 0;
+  let maxV = 0;
 
-    const result =
-      AndroidBridge.exportGalaxyCsv(selectedGalaxy);
+  selectedCurve.forEach(r => {
 
-    el.textContent = result.startsWith("ERROR:")
+    maxR =
+      Math.max(
+        maxR,
+        Number(r.radius_kpc)
+      );
+
+    maxV =
+      Math.max(
+        maxV,
+        Number(r.v_obs_kms)
+      );
+  });
+
+  if (maxR <= 0) {
+    maxR = 1;
+  }
+
+  if (maxV <= 0) {
+    maxV = 1;
+  }
+
+  const plotW =
+    width -
+    left -
+    right;
+
+  const plotH =
+    height -
+    top -
+    bottom;
+
+  const NS =
+    "http://www.w3.org/2000/svg";
+
+  const axisX =
+    document.createElementNS(
+      NS,
+      "line"
+    );
+
+  axisX.setAttribute(
+    "x1",
+    left
+  );
+
+  axisX.setAttribute(
+    "y1",
+    height - bottom
+  );
+
+  axisX.setAttribute(
+    "x2",
+    width - right
+  );
+
+  axisX.setAttribute(
+    "y2",
+    height - bottom
+  );
+
+  axisX.setAttribute(
+    "stroke",
+    "#6b7280"
+  );
+
+  svg.appendChild(axisX);
+
+  const axisY =
+    document.createElementNS(
+      NS,
+      "line"
+    );
+
+  axisY.setAttribute(
+    "x1",
+    left
+  );
+
+  axisY.setAttribute(
+    "y1",
+    top
+  );
+
+  axisY.setAttribute(
+    "x2",
+    left
+  );
+
+  axisY.setAttribute(
+    "y2",
+    height - bottom
+  );
+
+  axisY.setAttribute(
+    "stroke",
+    "#6b7280"
+  );
+
+  svg.appendChild(axisY);
+
+  let points = "";
+
+  selectedCurve.forEach(r => {
+
+    const x =
+      left +
+      (
+        Number(r.radius_kpc) /
+        maxR
+      ) *
+      plotW;
+
+    const y =
+      top +
+      plotH -
+      (
+        Number(r.v_obs_kms) /
+        maxV
+      ) *
+      plotH;
+
+    points +=
+      x +
+      "," +
+      y +
+      " ";
+  });
+
+  const poly =
+    document.createElementNS(
+      NS,
+      "polyline"
+    );
+
+  poly.setAttribute(
+    "points",
+    points.trim()
+  );
+
+  poly.setAttribute(
+    "fill",
+    "none"
+  );
+
+  poly.setAttribute(
+    "stroke",
+    "#60a5fa"
+  );
+
+  poly.setAttribute(
+    "stroke-width",
+    "3"
+  );
+
+  svg.appendChild(poly);
+
+  selectedCurve.forEach(r => {
+
+    const x =
+      left +
+      (
+        Number(r.radius_kpc) /
+        maxR
+      ) *
+      plotW;
+
+    const y =
+      top +
+      plotH -
+      (
+        Number(r.v_obs_kms) /
+        maxV
+      ) *
+      plotH;
+
+    const c =
+      document.createElementNS(
+        NS,
+        "circle"
+      );
+
+    c.setAttribute(
+      "cx",
+      x
+    );
+
+    c.setAttribute(
+      "cy",
+      y
+    );
+
+    c.setAttribute(
+      "r",
+      "3"
+    );
+
+    c.setAttribute(
+      "fill",
+      "#93c5fd"
+    );
+
+    svg.appendChild(c);
+  });
+}
+
+
+function loadCohort(name) {
+
+  let items = [];
+
+  try {
+
+    items =
+      JSON.parse(
+        AndroidBridge
+          .getCohort(name)
+      );
+
+  } catch (e) {
+
+    items = [];
+  }
+
+  document
+    .getElementById("cohortInfo")
+    .textContent =
+      name +
+      " — " +
+      items.length +
+      " galaxies";
+
+  const list =
+    document.getElementById(
+      "cohortList"
+    );
+
+  list.innerHTML = "";
+
+  items.forEach(galaxy => {
+
+    const row =
+      document.createElement("div");
+
+    row.className =
+      "galaxy-row";
+
+    row.textContent =
+      galaxy;
+
+    row.onclick =
+      () => {
+
+        showTab("explore");
+
+        document
+          .getElementById(
+            "searchBox"
+          )
+          .value =
+            galaxy;
+
+        filterCatalog();
+
+        selectGalaxy(
+          galaxy
+        );
+      };
+
+    list.appendChild(row);
+  });
+}
+
+
+function exportSelectedGalaxy() {
+
+  const el =
+    document.getElementById(
+      "exportStatus"
+    );
+
+  if (!selectedGalaxy) {
+
+    el.textContent =
+      "Select a galaxy first.";
+
+    return;
+  }
+
+  const result =
+    AndroidBridge
+      .exportGalaxyCsv(
+        selectedGalaxy
+      );
+
+  el.textContent =
+    result.startsWith("ERROR:")
       ? result
-      : "Saved to:\n" + result;
-  }
+      : "Saved to:\n" +
+        result;
+}
+
+
+function fmt(value, digits) {
+
+  const x =
+    Number(value);
+
+  return Number.isFinite(x)
+    ? x.toFixed(digits)
+    : "—";
+}
+
 </script>
 
 </body>
-</html>
+  </html>
