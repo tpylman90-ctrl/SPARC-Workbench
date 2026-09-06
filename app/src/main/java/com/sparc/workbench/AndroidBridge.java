@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
 
 public class AndroidBridge {
 
@@ -33,27 +34,66 @@ public class AndroidBridge {
         this.webView = webView;
     }
 
+    // ------------------------------------------------------------
+    // LOAD / DOWNLOAD SPARC
+    // ------------------------------------------------------------
+
     @JavascriptInterface
     public void loadSparcData() {
+
         new Thread(() -> {
+
             try {
-                File dir = new File(activity.getFilesDir(), "sparc");
+
+                File dir =
+                        new File(
+                                activity.getFilesDir(),
+                                "sparc"
+                        );
 
                 if (!dir.exists()) {
                     dir.mkdirs();
                 }
 
                 File meta =
-                        new File(dir, "SPARC_Lelli2016c.mrt");
+                        new File(
+                                dir,
+                                "SPARC_Lelli2016c.mrt"
+                        );
 
                 File mass =
-                        new File(dir, "MassModels_Lelli2016c.mrt");
+                        new File(
+                                dir,
+                                "MassModels_Lelli2016c.mrt"
+                        );
 
-                downloadIfNeeded(META_URL, meta);
-                downloadIfNeeded(MASS_URL, mass);
+                downloadIfNeeded(
+                        META_URL,
+                        meta
+                );
 
-                JSONObject result = new JSONObject();
-                result.put("ok", true);
+                downloadIfNeeded(
+                        MASS_URL,
+                        mass
+                );
+
+                JSONObject result =
+                        new JSONObject();
+
+                result.put(
+                        "ok",
+                        true
+                );
+
+                result.put(
+                        "metadataBytes",
+                        meta.length()
+                );
+
+                result.put(
+                        "massModelBytes",
+                        mass.length()
+                );
 
                 sendToJs(
                         "onSparcLoaded",
@@ -63,10 +103,19 @@ public class AndroidBridge {
             } catch (Exception e) {
 
                 try {
-                    JSONObject result = new JSONObject();
 
-                    result.put("ok", false);
-                    result.put("error", e.toString());
+                    JSONObject result =
+                            new JSONObject();
+
+                    result.put(
+                            "ok",
+                            false
+                    );
+
+                    result.put(
+                            "error",
+                            e.toString()
+                    );
 
                     sendToJs(
                             "onSparcLoaded",
@@ -76,24 +125,38 @@ public class AndroidBridge {
                 } catch (Exception ignored) {
                 }
             }
+
         }).start();
     }
+
+
+    // ------------------------------------------------------------
+    // GALAXY CATALOG
+    // ------------------------------------------------------------
 
     @JavascriptInterface
     public String getGalaxyCatalog() {
 
-        JSONArray arr = new JSONArray();
+        JSONArray result =
+                new JSONArray();
 
         try {
 
-            File file = new File(
-                    new File(activity.getFilesDir(), "sparc"),
-                    "SPARC_Lelli2016c.mrt"
-            );
+            File file =
+                    new File(
+                            new File(
+                                    activity.getFilesDir(),
+                                    "sparc"
+                            ),
+                            "SPARC_Lelli2016c.mrt"
+                    );
 
             if (!file.exists()) {
-                return arr.toString();
+                return result.toString();
             }
+
+            LinkedHashSet<String> galaxies =
+                    new LinkedHashSet<>();
 
             try (
                     BufferedReader reader =
@@ -107,87 +170,202 @@ public class AndroidBridge {
 
                 String line;
 
-                while ((line = reader.readLine()) != null) {
+                while (
+                        (line = reader.readLine())
+                                != null
+                ) {
 
-                    if (line.length() < 100) {
+                    line =
+                            line.trim();
+
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+
+                    String[] p =
+                            line.split("\\s+");
+
+                    /*
+                     * Genuine SPARC metadata rows contain
+                     * the complete structured numeric record.
+                     *
+                     * Header material such as:
+                     *
+                     * Spitzer
+                     * Bytes
+                     * 1-
+                     * 12-
+                     *
+                     * fails these checks automatically.
+                     */
+
+                    if (p.length < 18) {
                         continue;
                     }
 
                     try {
 
                         String galaxy =
-                                line.substring(0, 11).trim();
-
-                        String hubbleText =
-                                line.substring(11, 13).trim();
-
-                        String distanceText =
-                                line.substring(13, 19).trim();
-
-                        String inclinationText =
-                                line.substring(26, 30).trim();
-
-                        String qualityText =
-                                line.substring(96, 99).trim();
-
-                        if (galaxy.isEmpty()) {
-                            continue;
-                        }
+                                p[0];
 
                         int hubble =
-                                Integer.parseInt(hubbleText);
+                                Integer.parseInt(
+                                        p[1]
+                                );
 
                         double distance =
-                                Double.parseDouble(distanceText);
+                                Double.parseDouble(
+                                        p[2]
+                                );
+
+                        double distanceError =
+                                Double.parseDouble(
+                                        p[3]
+                                );
+
+                        int distanceMethod =
+                                Integer.parseInt(
+                                        p[4]
+                                );
 
                         double inclination =
-                                Double.parseDouble(inclinationText);
+                                Double.parseDouble(
+                                        p[5]
+                                );
+
+                        double inclinationError =
+                                Double.parseDouble(
+                                        p[6]
+                                );
+
+                        // Remaining SPARC numerical fields
+
+                        Double.parseDouble(p[7]);
+                        Double.parseDouble(p[8]);
+                        Double.parseDouble(p[9]);
+                        Double.parseDouble(p[10]);
+                        Double.parseDouble(p[11]);
+                        Double.parseDouble(p[12]);
+                        Double.parseDouble(p[13]);
+                        Double.parseDouble(p[14]);
+                        Double.parseDouble(p[15]);
+                        Double.parseDouble(p[16]);
 
                         int quality =
-                                Integer.parseInt(qualityText);
+                                Integer.parseInt(
+                                        p[17]
+                                );
 
-                        if (hubble < 0 || hubble > 11) {
+                        // ----------------------------
+                        // Scientific sanity checks
+                        // ----------------------------
+
+                        if (
+                                galaxy == null ||
+                                galaxy.isEmpty()
+                        ) {
                             continue;
                         }
 
-                        if (distance <= 0) {
+                        if (
+                                hubble < 0 ||
+                                hubble > 11
+                        ) {
                             continue;
                         }
 
-                        if (inclination <= 0 ||
-                                inclination > 90) {
+                        if (
+                                distance <= 0
+                        ) {
                             continue;
                         }
 
-                        if (quality < 1 ||
-                                quality > 3) {
+                        if (
+                                distanceError < 0
+                        ) {
                             continue;
                         }
 
-                        arr.put(galaxy);
+                        if (
+                                distanceMethod < 1 ||
+                                distanceMethod > 5
+                        ) {
+                            continue;
+                        }
+
+                        if (
+                                inclination <= 0 ||
+                                inclination > 90
+                        ) {
+                            continue;
+                        }
+
+                        if (
+                                inclinationError < 0
+                        ) {
+                            continue;
+                        }
+
+                        if (
+                                quality < 1 ||
+                                quality > 3
+                        ) {
+                            continue;
+                        }
+
+                        galaxies.add(
+                                galaxy
+                        );
 
                     } catch (Exception ignored) {
+
+                        /*
+                         * Anything that does not behave like
+                         * a complete SPARC data row is ignored.
+                         */
                     }
                 }
+            }
+
+            for (
+                    String galaxy :
+                    galaxies
+            ) {
+
+                result.put(
+                        galaxy
+                );
             }
 
         } catch (Exception ignored) {
         }
 
-        return arr.toString();
+        return result.toString();
     }
 
-    @JavascriptInterface
-    public String getRotationCurve(String galaxyName) {
 
-        JSONArray rows = new JSONArray();
+    // ------------------------------------------------------------
+    // ROTATION CURVES
+    // ------------------------------------------------------------
+
+    @JavascriptInterface
+    public String getRotationCurve(
+            String galaxyName
+    ) {
+
+        JSONArray rows =
+                new JSONArray();
 
         try {
 
-            File file = new File(
-                    new File(activity.getFilesDir(), "sparc"),
-                    "MassModels_Lelli2016c.mrt"
-            );
+            File file =
+                    new File(
+                            new File(
+                                    activity.getFilesDir(),
+                                    "sparc"
+                            ),
+                            "MassModels_Lelli2016c.mrt"
+                    );
 
             if (!file.exists()) {
                 return rows.toString();
@@ -205,9 +383,13 @@ public class AndroidBridge {
 
                 String line;
 
-                while ((line = reader.readLine()) != null) {
+                while (
+                        (line = reader.readLine())
+                                != null
+                ) {
 
-                    line = line.trim();
+                    line =
+                            line.trim();
 
                     if (line.isEmpty()) {
                         continue;
@@ -220,7 +402,11 @@ public class AndroidBridge {
                         continue;
                     }
 
-                    if (!p[0].equals(galaxyName)) {
+                    if (
+                            !p[0].equals(
+                                    galaxyName
+                            )
+                    ) {
                         continue;
                     }
 
@@ -236,50 +422,70 @@ public class AndroidBridge {
 
                         row.put(
                                 "distance_mpc",
-                                Double.parseDouble(p[1])
+                                Double.parseDouble(
+                                        p[1]
+                                )
                         );
 
                         row.put(
                                 "radius_kpc",
-                                Double.parseDouble(p[2])
+                                Double.parseDouble(
+                                        p[2]
+                                )
                         );
 
                         row.put(
                                 "v_obs_kms",
-                                Double.parseDouble(p[3])
+                                Double.parseDouble(
+                                        p[3]
+                                )
                         );
 
                         row.put(
                                 "v_err_kms",
-                                Double.parseDouble(p[4])
+                                Double.parseDouble(
+                                        p[4]
+                                )
                         );
 
                         row.put(
                                 "v_gas_kms",
-                                Double.parseDouble(p[5])
+                                Double.parseDouble(
+                                        p[5]
+                                )
                         );
 
                         row.put(
                                 "v_disk_kms",
-                                Double.parseDouble(p[6])
+                                Double.parseDouble(
+                                        p[6]
+                                )
                         );
 
                         row.put(
                                 "v_bulge_kms",
-                                Double.parseDouble(p[7])
+                                Double.parseDouble(
+                                        p[7]
+                                )
                         );
 
                         row.put(
                                 "sb_disk",
-                                Double.parseDouble(p[8])
+                                Double.parseDouble(
+                                        p[8]
+                                )
                         );
 
                         row.put(
                                 "sb_bulge",
-                                Double.parseDouble(p[9])
+                                Double.parseDouble(
+                                        p[9]
+                                )
                         );
 
-                        rows.put(row);
+                        rows.put(
+                                row
+                        );
 
                     } catch (Exception ignored) {
                     }
@@ -291,6 +497,11 @@ public class AndroidBridge {
 
         return rows.toString();
     }
+
+
+    // ------------------------------------------------------------
+    // CSV EXPORT
+    // ------------------------------------------------------------
 
     @JavascriptInterface
     public String exportGalaxyCsv(
@@ -320,7 +531,12 @@ public class AndroidBridge {
                     );
 
             if (!outDir.exists()) {
-                outDir.mkdirs();
+
+                if (!outDir.mkdirs()) {
+
+                    return
+                            "ERROR: Could not create export directory.";
+                }
             }
 
             File out =
@@ -404,7 +620,9 @@ public class AndroidBridge {
 
             try (
                     FileOutputStream fos =
-                            new FileOutputStream(out)
+                            new FileOutputStream(
+                                    out
+                            )
             ) {
 
                 fos.write(
@@ -415,13 +633,21 @@ public class AndroidBridge {
                 );
             }
 
-            return out.getAbsolutePath();
+            return
+                    out.getAbsolutePath();
 
         } catch (Exception e) {
 
-            return "ERROR: " + e;
+            return
+                    "ERROR: " +
+                    e.toString();
         }
     }
+
+
+    // ------------------------------------------------------------
+    // DOWNLOAD UTILITY
+    // ------------------------------------------------------------
 
     private void downloadIfNeeded(
             String urlString,
@@ -432,39 +658,53 @@ public class AndroidBridge {
                 target.exists() &&
                 target.length() > 1000
         ) {
+
             return;
         }
 
-        HttpURLConnection conn =
+        HttpURLConnection connection =
                 (HttpURLConnection)
                         new URL(
                                 urlString
-                        ).openConnection();
+                        )
+                                .openConnection();
 
-        conn.setConnectTimeout(15000);
-        conn.setReadTimeout(30000);
-
-        conn.setRequestProperty(
-                "User-Agent",
-                "SPARC-Workbench-Android/1.1"
+        connection.setConnectTimeout(
+                15000
         );
 
-        conn.connect();
+        connection.setReadTimeout(
+                30000
+        );
+
+        connection.setRequestProperty(
+                "User-Agent",
+                "SPARC-Workbench-Android/1.1.1"
+        );
+
+        connection.connect();
 
         int response =
-                conn.getResponseCode();
+                connection
+                        .getResponseCode();
 
-        if (response != 200) {
+        if (
+                response !=
+                HttpURLConnection.HTTP_OK
+        ) {
+
             throw new Exception(
-                    "HTTP " + response
+                    "HTTP " +
+                    response
             );
         }
 
         try (
-                java.io.InputStream in =
-                        conn.getInputStream();
+                java.io.InputStream input =
+                        connection
+                                .getInputStream();
 
-                FileOutputStream out =
+                FileOutputStream output =
                         new FileOutputStream(
                                 target
                         )
@@ -477,11 +717,13 @@ public class AndroidBridge {
 
             while (
                     (count =
-                            in.read(buffer))
+                            input.read(
+                                    buffer
+                            ))
                             != -1
             ) {
 
-                out.write(
+                output.write(
                         buffer,
                         0,
                         count
@@ -490,9 +732,14 @@ public class AndroidBridge {
 
         } finally {
 
-            conn.disconnect();
+            connection.disconnect();
         }
     }
+
+
+    // ------------------------------------------------------------
+    // JAVASCRIPT CALLBACK UTILITY
+    // ------------------------------------------------------------
 
     private void sendToJs(
             String function,
@@ -511,16 +758,18 @@ public class AndroidBridge {
                         );
 
         activity.runOnUiThread(
+
                 () ->
-                        webView
-                                .evaluateJavascript(
-                                        "window." +
-                                                function +
-                                                "('" +
-                                                escaped +
-                                                "')",
-                                        null
-                                )
+                        webView.evaluateJavascript(
+
+                                "window." +
+                                function +
+                                "('" +
+                                escaped +
+                                "')",
+
+                                null
+                        )
         );
     }
 }
