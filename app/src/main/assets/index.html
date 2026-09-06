@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPARC Workbench</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+    header {
+      padding: 20px;
+      background: #1f2937;
+      border-bottom: 1px solid #374151;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+    p {
+      color: #cbd5e1;
+      line-height: 1.4;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      padding: 12px;
+      background: #111827;
+      position: sticky;
+      top: 0;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 10px;
+      font-weight: 600;
+      background: #374151;
+      color: white;
+    }
+    button.primary {
+      background: #2563eb;
+    }
+    main {
+      padding: 16px;
+    }
+    .card {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .hidden {
+      display: none;
+    }
+    .status {
+      margin-top: 12px;
+      color: #93c5fd;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SPARC Workbench</h1>
+    <p>Explore, validate, filter, visualize, and export SPARC galaxy rotation-curve data.</p>
+  </header>
+
+  <div class="tabs">
+    <button onclick="showTab('explore')">Explore</button>
+    <button onclick="showTab('cohorts')">Cohorts</button>
+    <button onclick="showTab('export')">Export</button>
+    <button onclick="showTab('health')">Data Health</button>
+  </div>
+
+  <main>
+    <section id="explore">
+      <div class="card">
+        <h2>Load SPARC Data</h2>
+        <p>Load the official SPARC source tables into the local workbench.</p>
+        <button class="primary" onclick="loadData()">Load SPARC Data</button>
+        <div id="status" class="status">No dataset loaded.</div>
+      </div>
+
+      <div class="card">
+        <h2>Explore Galaxies</h2>
+        <p>Galaxy search and rotation-curve tools will appear here once the native data layer is connected.</p>
+      </div>
+    </section>
+
+    <section id="cohorts" class="hidden">
+      <div class="card">
+        <h2>Scientific Cohorts</h2>
+        <p>Quality, BTFR-ready, bulgeless, extended-curve, and UIG benchmark cohorts.</p>
+      </div>
+    </section>
+
+    <section id="export" class="hidden">
+      <div class="card">
+        <h2>Custom Export</h2>
+        <p>Choose an export profile or define a custom model schema.</p>
+      </div>
+    </section>
+
+    <section id="health" class="hidden">
+      <div class="card">
+        <h2>Data Health</h2>
+        <p>Validation summaries and source-profile checks will appear here.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function showTab(id) {
+      for (const section of document.querySelectorAll("main section")) {
+        section.classList.add("hidden");
+      }
+      document.getElementById(id).classList.remove("hidden");
+    }
+
+    function loadData() {
+      document.getElementById("status").textContent =
+        "Interface ready. Native SPARC data loading will be connected next.";
+    }
+  </script>
+</body>
+</html>
