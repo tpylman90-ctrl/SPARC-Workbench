@@ -1,40 +1,95 @@
-package org.sparcworkbench.app;
+@JavascriptInterface
+public String getGalaxyCatalog() {
+    JSONArray arr = new JSONArray();
 
-import android.app.Activity;
-import android.content.Context;
-import android.os.Environment;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebView;
+    try {
+        File file = new File(
+                new File(activity.getFilesDir(), "sparc"),
+                "SPARC_Lelli2016c.mrt"
+        );
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+        if (!file.exists()) {
+            return arr.toString();
+        }
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+        try (BufferedReader reader =
+                     new BufferedReader(
+                             new InputStreamReader(
+                                     new java.io.FileInputStream(file),
+                                     StandardCharsets.UTF_8))) {
 
-public class AndroidBridge {
-    private final Activity activity;
-    private final WebView webView;
+            String line;
 
-    private static final String META_URL =
-            "https://astroweb.cwru.edu/SPARC/SPARC_Lelli2016c.mrt";
+            while ((line = reader.readLine()) != null) {
 
-    private static final String MASS_URL =
-            "https://astroweb.cwru.edu/SPARC/MassModels_Lelli2016c.mrt";
+                // SPARC Table 1 galaxy rows use fixed-width columns.
+                // Galaxy name occupies bytes 1-11.
+                if (line.length() < 99) {
+                    continue;
+                }
 
-    public AndroidBridge(Activity activity, WebView webView) {
-        this.activity = activity;
-        this.webView = webView;
+                try {
+                    String galaxy =
+                            line.substring(0, 11).trim();
+
+                    String hubbleTypeText =
+                            line.substring(11, 13).trim();
+
+                    String distanceText =
+                            line.substring(13, 19).trim();
+
+                    String inclinationText =
+                            line.substring(26, 30).trim();
+
+                    String qualityText =
+                            line.substring(96, 99).trim();
+
+                    if (galaxy.isEmpty()) {
+                        continue;
+                    }
+
+                    int hubbleType =
+                            Integer.parseInt(hubbleTypeText);
+
+                    double distance =
+                            Double.parseDouble(distanceText);
+
+                    double inclination =
+                            Double.parseDouble(inclinationText);
+
+                    int quality =
+                            Integer.parseInt(qualityText);
+
+                    // Sanity checks matching the documented SPARC fields.
+                    if (hubbleType < 0 || hubbleType > 11) {
+                        continue;
+                    }
+
+                    if (distance <= 0) {
+                        continue;
+                    }
+
+                    if (inclination <= 0 || inclination > 90) {
+                        continue;
+                    }
+
+                    if (quality < 1 || quality > 3) {
+                        continue;
+                    }
+
+                    arr.put(galaxy);
+
+                } catch (Exception ignored) {
+                    // Header, notes, references, and malformed rows are skipped.
+                }
+            }
+        }
+
+    } catch (Exception ignored) {
     }
 
-    @JavascriptInterface
+    return arr.toString();
+}    @JavascriptInterface
     public void loadSparcData() {
         new Thread(() -> {
             try {
