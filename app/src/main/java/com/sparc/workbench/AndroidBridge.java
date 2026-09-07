@@ -1,7 +1,12 @@
 package org.sparcworkbench.app;
 
 import android.app.Activity;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
@@ -13,6 +18,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -659,12 +665,6 @@ public class AndroidBridge {
 
         } else {
 
-            /*
-             * Canonical CSV:
-             * single-galaxy output stays unchanged,
-             * cohort output becomes one flat table with galaxy_name.
-             */
-
             style.put("name", "canonical_csv");
             style.put("delimiter", ",");
             style.put("include_header", true);
@@ -817,7 +817,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // SINGLE-GALAXY EXPORT
+    // SINGLE GALAXY EXPORT
     // ============================================================
 
     private String exportGalaxyUsingStyle(
@@ -844,14 +844,12 @@ public class AndroidBridge {
                         )
                 );
 
-        File out =
-                exportFile(
-                        galaxyName +
-                                "_" +
-                                styleName +
-                                "." +
-                                extension
-                );
+        String filename =
+                galaxyName +
+                        "_" +
+                        styleName +
+                        "." +
+                        extension;
 
         String content =
                 renderGalaxy(
@@ -860,9 +858,11 @@ public class AndroidBridge {
                         style
                 );
 
-        writeTextFile(out, content);
-
-        return out.getAbsolutePath();
+        return saveExportToDownloads(
+                filename,
+                content,
+                mimeTypeForExtension(extension)
+        );
     }
 
     // ============================================================
@@ -889,14 +889,12 @@ public class AndroidBridge {
                         )
                 );
 
-        File out =
-                exportFile(
-                        sanitizeFilename(groupName) +
-                                "_" +
-                                styleName +
-                                "." +
-                                extension
-                );
+        String filename =
+                sanitizeFilename(groupName) +
+                        "_" +
+                        styleName +
+                        "." +
+                        extension;
 
         String content;
 
@@ -917,19 +915,17 @@ public class AndroidBridge {
                     );
         }
 
-        writeTextFile(out, content);
-
-        return out.getAbsolutePath();
+        return saveExportToDownloads(
+                filename,
+                content,
+                mimeTypeForExtension(extension)
+        );
     }
 
-    /*
-     * Machine-readable canonical cohort format:
-     *
-     * galaxy_name,radius_kpc,v_obs_kms,...
-     * NGC2403,...
-     * NGC2403,...
-     * NGC3198,...
-     */
+    // ============================================================
+    // COHORT RENDERING
+    // ============================================================
+
     private String renderFlatCohort(
             JSONArray galaxies,
             JSONObject style
@@ -1043,10 +1039,6 @@ public class AndroidBridge {
         return sb.toString();
     }
 
-    /*
-     * Block output is retained for UIG, whitespace,
-     * and arbitrary custom schemas.
-     */
     private String renderBlockCohort(
             JSONArray galaxies,
             JSONObject style
@@ -1333,18 +1325,138 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // FILE HELPERS
+    // MODERN DOWNLOADS STORAGE
     // ============================================================
 
-    private File exportFile(
-            String filename
+    private String saveExportToDownloads(
+            String filename,
+            String content,
+            String mimeType
+    ) throws Exception {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return saveWithMediaStore(
+                    filename,
+                    content,
+                    mimeType
+            );
+        }
+
+        return saveLegacyDownloads(
+                filename,
+                content
+        );
+    }
+
+    private String saveWithMediaStore(
+            String filename,
+            String content,
+            String mimeType
+    ) throws Exception {
+
+        ContentResolver resolver =
+                activity.getContentResolver();
+
+        ContentValues values =
+                new ContentValues();
+
+        values.put(
+                MediaStore.Downloads.DISPLAY_NAME,
+                filename
+        );
+
+        values.put(
+                MediaStore.Downloads.MIME_TYPE,
+                mimeType
+        );
+
+        values.put(
+                MediaStore.Downloads.RELATIVE_PATH,
+                Environment.DIRECTORY_DOWNLOADS +
+                        "/SPARC_Workbench"
+        );
+
+        values.put(
+                MediaStore.Downloads.IS_PENDING,
+                1
+        );
+
+        Uri uri =
+                resolver.insert(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        values
+                );
+
+        if (uri == null) {
+            throw new Exception(
+                    "MediaStore could not create export file."
+            );
+        }
+
+        boolean success = false;
+
+        try (
+                OutputStream output =
+                        resolver.openOutputStream(uri)
+        ) {
+
+            if (output == null) {
+                throw new Exception(
+                        "Could not open export output stream."
+                );
+            }
+
+            output.write(
+                    content.getBytes(
+                            StandardCharsets.UTF_8
+                    )
+            );
+
+            output.flush();
+
+            success = true;
+
+        } finally {
+
+            if (success) {
+
+                ContentValues done =
+                        new ContentValues();
+
+                done.put(
+                        MediaStore.Downloads.IS_PENDING,
+                        0
+                );
+
+                resolver.update(
+                        uri,
+                        done,
+                        null,
+                        null
+                );
+
+            } else {
+
+                resolver.delete(
+                        uri,
+                        null,
+                        null
+                );
+            }
+        }
+
+        return "Downloads/SPARC_Workbench/" + filename;
+    }
+
+    private String saveLegacyDownloads(
+            String filename,
+            String content
     ) throws Exception {
 
         File downloads =
                 Environment
                         .getExternalStoragePublicDirectory(
-                                Environment
-                                        .DIRECTORY_DOWNLOADS
+                                Environment.DIRECTORY_DOWNLOADS
                         );
 
         File outDir =
@@ -1361,16 +1473,11 @@ public class AndroidBridge {
             );
         }
 
-        return new File(
-                outDir,
-                filename
-        );
-    }
-
-    private void writeTextFile(
-            File out,
-            String content
-    ) throws Exception {
+        File out =
+                new File(
+                        outDir,
+                        filename
+                );
 
         try (
                 FileOutputStream fos =
@@ -1383,16 +1490,32 @@ public class AndroidBridge {
                     )
             );
         }
+
+        return out.getAbsolutePath();
     }
 
-    private String sanitizeFilename(
-            String value
+    private String mimeTypeForExtension(
+            String extension
     ) {
 
-        return value.replaceAll(
-                "[^A-Za-z0-9._-]+",
-                "_"
-        );
+        if (extension == null) {
+            return "text/plain";
+        }
+
+        String ext =
+                extension
+                        .trim()
+                        .toLowerCase(Locale.US);
+
+        if ("csv".equals(ext)) {
+            return "text/csv";
+        }
+
+        if ("tsv".equals(ext)) {
+            return "text/tab-separated-values";
+        }
+
+        return "text/plain";
     }
 
     // ============================================================
@@ -1502,6 +1625,16 @@ public class AndroidBridge {
         return value * value;
     }
 
+    private String sanitizeFilename(
+            String value
+    ) {
+
+        return value.replaceAll(
+                "[^A-Za-z0-9._-]+",
+                "_"
+        );
+    }
+
     private void downloadIfNeeded(
             String urlString,
             File target
@@ -1523,7 +1656,7 @@ public class AndroidBridge {
 
         connection.setRequestProperty(
                 "User-Agent",
-                "SPARC-Workbench-Android/1.3.1"
+                "SPARC-Workbench-Android/1.3.2"
         );
 
         connection.connect();
@@ -1590,4 +1723,4 @@ public class AndroidBridge {
                         )
         );
     }
-                }
+        }
