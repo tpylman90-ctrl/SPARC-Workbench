@@ -18,10 +18,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 
 public class AndroidBridge {
 
@@ -40,7 +39,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // LOAD / DOWNLOAD
+    // DATA LOAD
     // ============================================================
 
     @JavascriptInterface
@@ -319,8 +318,7 @@ public class AndroidBridge {
                             n - 1
                     );
 
-            List<Double> fracErrors =
-                    new ArrayList<>();
+            List<Double> fracErrors = new ArrayList<>();
 
             boolean bulgePresent = false;
 
@@ -390,10 +388,7 @@ public class AndroidBridge {
             }
 
             double vflat =
-                    meta.optDouble(
-                            "vflat_kms",
-                            0.0
-                    );
+                    meta.optDouble("vflat_kms", 0.0);
 
             double vflatResidual =
                     vflat > 0
@@ -456,8 +451,7 @@ public class AndroidBridge {
                 String line;
 
                 while ((line = reader.readLine()) != null) {
-                    JSONObject meta =
-                            parseMetadataRow(line);
+                    JSONObject meta = parseMetadataRow(line);
 
                     if (meta == null) {
                         continue;
@@ -580,7 +574,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // EXPORT STYLES
+    // EXPORT DEFINITIONS
     // ============================================================
 
     @JavascriptInterface
@@ -615,11 +609,8 @@ public class AndroidBridge {
             String styleName
     ) throws Exception {
 
-        JSONObject style =
-                new JSONObject();
-
-        JSONArray columns =
-                new JSONArray();
+        JSONObject style = new JSONObject();
+        JSONArray columns = new JSONArray();
 
         if ("minimal_csv".equals(styleName)) {
 
@@ -638,7 +629,10 @@ public class AndroidBridge {
             style.put("delimiter", ",");
             style.put("include_header", true);
             style.put("extension", "txt");
-            style.put("galaxy_header_template", "Galaxy name: {galaxy}");
+            style.put(
+                    "galaxy_header_template",
+                    "Galaxy name: {galaxy}"
+            );
 
             columns.put(column("radius_kpc", "radius_kpc", 1.0, 0.0));
             columns.put(column("v_obs_kms", "v_obs", 1.0, 0.0));
@@ -665,10 +659,18 @@ public class AndroidBridge {
 
         } else {
 
+            /*
+             * Canonical CSV:
+             * single-galaxy output stays unchanged,
+             * cohort output becomes one flat table with galaxy_name.
+             */
+
             style.put("name", "canonical_csv");
             style.put("delimiter", ",");
             style.put("include_header", true);
             style.put("extension", "csv");
+            style.put("flat_cohort", true);
+            style.put("include_galaxy_column", true);
 
             columns.put(column("radius_kpc", "radius_kpc", 1.0, 0.0));
             columns.put(column("v_obs_kms", "v_obs_kms", 1.0, 0.0));
@@ -692,8 +694,7 @@ public class AndroidBridge {
             double offset
     ) throws Exception {
 
-        JSONObject c =
-                new JSONObject();
+        JSONObject c = new JSONObject();
 
         c.put("source", source);
         c.put("name", name);
@@ -704,7 +705,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // CUSTOM EXPORT
+    // EXPORT API
     // ============================================================
 
     @JavascriptInterface
@@ -727,9 +728,7 @@ public class AndroidBridge {
             } else {
 
                 style =
-                        new JSONObject(
-                                styleJson
-                        );
+                        new JSONObject(styleJson);
             }
 
             return exportGalaxyUsingStyle(
@@ -739,9 +738,7 @@ public class AndroidBridge {
 
         } catch (Exception e) {
 
-            return
-                    "ERROR: " +
-                            e.toString();
+            return "ERROR: " + e;
         }
     }
 
@@ -752,21 +749,14 @@ public class AndroidBridge {
     ) {
 
         try {
-            JSONObject style =
-                    builtInExportStyle(
-                            presetName
-                    );
-
             return exportGalaxyUsingStyle(
                     galaxyName,
-                    style
+                    builtInExportStyle(presetName)
             );
 
         } catch (Exception e) {
 
-            return
-                    "ERROR: " +
-                            e.toString();
+            return "ERROR: " + e;
         }
     }
 
@@ -795,9 +785,7 @@ public class AndroidBridge {
 
         } catch (Exception e) {
 
-            return
-                    "ERROR: " +
-                            e.toString();
+            return "ERROR: " + e;
         }
     }
 
@@ -814,9 +802,7 @@ public class AndroidBridge {
                     );
 
             JSONObject style =
-                    new JSONObject(
-                            styleJson
-                    );
+                    new JSONObject(styleJson);
 
             return exportMultipleGalaxies(
                     galaxies,
@@ -826,11 +812,13 @@ public class AndroidBridge {
 
         } catch (Exception e) {
 
-            return
-                    "ERROR: " +
-                            e.toString();
+            return "ERROR: " + e;
         }
     }
+
+    // ============================================================
+    // SINGLE-GALAXY EXPORT
+    // ============================================================
 
     private String exportGalaxyUsingStyle(
             String galaxyName,
@@ -839,9 +827,7 @@ public class AndroidBridge {
 
         JSONArray rows =
                 new JSONArray(
-                        getRotationCurve(
-                                galaxyName
-                        )
+                        getRotationCurve(galaxyName)
                 );
 
         String extension =
@@ -874,14 +860,14 @@ public class AndroidBridge {
                         style
                 );
 
-        writeTextFile(
-                out,
-                content
-        );
+        writeTextFile(out, content);
 
-        return
-                out.getAbsolutePath();
+        return out.getAbsolutePath();
     }
+
+    // ============================================================
+    // COHORT EXPORT
+    // ============================================================
 
     private String exportMultipleGalaxies(
             JSONArray galaxies,
@@ -912,6 +898,160 @@ public class AndroidBridge {
                                 extension
                 );
 
+        String content;
+
+        if (style.optBoolean("flat_cohort", false)) {
+
+            content =
+                    renderFlatCohort(
+                            galaxies,
+                            style
+                    );
+
+        } else {
+
+            content =
+                    renderBlockCohort(
+                            galaxies,
+                            style
+                    );
+        }
+
+        writeTextFile(out, content);
+
+        return out.getAbsolutePath();
+    }
+
+    /*
+     * Machine-readable canonical cohort format:
+     *
+     * galaxy_name,radius_kpc,v_obs_kms,...
+     * NGC2403,...
+     * NGC2403,...
+     * NGC3198,...
+     */
+    private String renderFlatCohort(
+            JSONArray galaxies,
+            JSONObject style
+    ) throws Exception {
+
+        String delimiter =
+                decodeDelimiter(
+                        style.optString(
+                                "delimiter",
+                                ","
+                        )
+                );
+
+        boolean includeHeader =
+                style.optBoolean(
+                        "include_header",
+                        true
+                );
+
+        boolean includeGalaxyColumn =
+                style.optBoolean(
+                        "include_galaxy_column",
+                        true
+                );
+
+        JSONArray columns =
+                style.getJSONArray(
+                        "columns"
+                );
+
+        StringBuilder sb =
+                new StringBuilder();
+
+        String preamble =
+                style.optString(
+                        "preamble",
+                        ""
+                );
+
+        if (!preamble.isEmpty()) {
+            sb.append(preamble);
+
+            if (!preamble.endsWith("\n")) {
+                sb.append("\n");
+            }
+        }
+
+        if (includeHeader) {
+
+            if (includeGalaxyColumn) {
+                sb.append("galaxy_name");
+
+                if (columns.length() > 0) {
+                    sb.append(delimiter);
+                }
+            }
+
+            appendColumnHeader(
+                    sb,
+                    columns,
+                    delimiter
+            );
+
+            sb.append("\n");
+        }
+
+        for (int g = 0;
+             g < galaxies.length();
+             g++) {
+
+            String galaxy =
+                    galaxies.getString(g);
+
+            JSONArray rows =
+                    new JSONArray(
+                            getRotationCurve(galaxy)
+                    );
+
+            for (int r = 0;
+                 r < rows.length();
+                 r++) {
+
+                JSONObject row =
+                        rows.getJSONObject(r);
+
+                if (includeGalaxyColumn) {
+
+                    sb.append(
+                            csvSafe(
+                                    galaxy,
+                                    delimiter
+                            )
+                    );
+
+                    if (columns.length() > 0) {
+                        sb.append(delimiter);
+                    }
+                }
+
+                appendDataRow(
+                        sb,
+                        row,
+                        columns,
+                        delimiter
+                );
+
+                sb.append("\n");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    /*
+     * Block output is retained for UIG, whitespace,
+     * and arbitrary custom schemas.
+     */
+    private String renderBlockCohort(
+            JSONArray galaxies,
+            JSONObject style
+    ) throws Exception {
+
         String separator =
                 style.optString(
                         "galaxy_separator",
@@ -929,29 +1069,23 @@ public class AndroidBridge {
 
         if (!preamble.isEmpty()) {
 
-            all.append(
-                    preamble
-            );
+            all.append(preamble);
 
             if (!preamble.endsWith("\n")) {
                 all.append("\n");
             }
         }
 
-        for (
-                int i = 0;
-                i < galaxies.length();
-                i++
-        ) {
+        for (int i = 0;
+             i < galaxies.length();
+             i++) {
 
             String galaxy =
                     galaxies.getString(i);
 
             JSONArray rows =
                     new JSONArray(
-                            getRotationCurve(
-                                    galaxy
-                            )
+                            getRotationCurve(galaxy)
                     );
 
             all.append(
@@ -965,20 +1099,16 @@ public class AndroidBridge {
             if (i <
                     galaxies.length() - 1) {
 
-                all.append(
-                        separator
-                );
+                all.append(separator);
             }
         }
 
-        writeTextFile(
-                out,
-                all.toString()
-        );
-
-        return
-                out.getAbsolutePath();
+        return all.toString();
     }
+
+    // ============================================================
+    // FORMAT RENDERING
+    // ============================================================
 
     private String renderGalaxy(
             String galaxyName,
@@ -998,6 +1128,11 @@ public class AndroidBridge {
                 style.optBoolean(
                         "include_header",
                         true
+                );
+
+        JSONArray columns =
+                style.getJSONArray(
+                        "columns"
                 );
 
         StringBuilder sb =
@@ -1021,119 +1156,126 @@ public class AndroidBridge {
             sb.append("\n");
         }
 
-        JSONArray columns =
-                style.getJSONArray(
-                        "columns"
-                );
-
         if (includeHeader) {
 
-            for (
-                    int c = 0;
-                    c < columns.length();
-                    c++
-            ) {
+            appendColumnHeader(
+                    sb,
+                    columns,
+                    delimiter
+            );
 
-                JSONObject col =
-                        columns.getJSONObject(c);
+            sb.append("\n");
+        }
 
-                if (c > 0) {
-                    sb.append(delimiter);
-                }
+        for (int i = 0;
+             i < rows.length();
+             i++) {
+
+            appendDataRow(
+                    sb,
+                    rows.getJSONObject(i),
+                    columns,
+                    delimiter
+            );
+
+            sb.append("\n");
+        }
+
+        return sb.toString();
+    }
+
+    private void appendColumnHeader(
+            StringBuilder sb,
+            JSONArray columns,
+            String delimiter
+    ) throws Exception {
+
+        for (int c = 0;
+             c < columns.length();
+             c++) {
+
+            JSONObject col =
+                    columns.getJSONObject(c);
+
+            if (c > 0) {
+                sb.append(delimiter);
+            }
+
+            sb.append(
+                    col.optString(
+                            "name",
+                            col.getString("source")
+                    )
+            );
+        }
+    }
+
+    private void appendDataRow(
+            StringBuilder sb,
+            JSONObject row,
+            JSONArray columns,
+            String delimiter
+    ) throws Exception {
+
+        for (int c = 0;
+             c < columns.length();
+             c++) {
+
+            JSONObject col =
+                    columns.getJSONObject(c);
+
+            if (c > 0) {
+                sb.append(delimiter);
+            }
+
+            String source =
+                    col.getString("source");
+
+            double value =
+                    row.getDouble(source);
+
+            double scale =
+                    col.optDouble(
+                            "scale",
+                            1.0
+                    );
+
+            double offset =
+                    col.optDouble(
+                            "offset",
+                            0.0
+                    );
+
+            int decimals =
+                    col.optInt(
+                            "decimals",
+                            -1
+                    );
+
+            value =
+                    value *
+                            scale +
+                            offset;
+
+            if (decimals >= 0) {
 
                 sb.append(
-                        col.optString(
-                                "name",
-                                col.getString("source")
+                        String.format(
+                                Locale.US,
+                                "%." +
+                                        decimals +
+                                        "f",
+                                value
                         )
                 );
+
+            } else {
+
+                sb.append(
+                        Double.toString(value)
+                );
             }
-
-            sb.append("\n");
         }
-
-        for (
-                int i = 0;
-                i < rows.length();
-                i++
-        ) {
-
-            JSONObject row =
-                    rows.getJSONObject(i);
-
-            for (
-                    int c = 0;
-                    c < columns.length();
-                    c++
-            ) {
-
-                JSONObject col =
-                        columns.getJSONObject(c);
-
-                if (c > 0) {
-                    sb.append(delimiter);
-                }
-
-                String source =
-                        col.getString(
-                                "source"
-                        );
-
-                double scale =
-                        col.optDouble(
-                                "scale",
-                                1.0
-                        );
-
-                double offset =
-                        col.optDouble(
-                                "offset",
-                                0.0
-                        );
-
-                int decimals =
-                        col.optInt(
-                                "decimals",
-                                -1
-                        );
-
-                double value =
-                        row.getDouble(
-                                source
-                        );
-
-                value =
-                        value *
-                                scale +
-                                offset;
-
-                if (decimals >= 0) {
-
-                    sb.append(
-                            String.format(
-                                    java.util.Locale.US,
-                                    "%." +
-                                            decimals +
-                                            "f",
-                                    value
-                            )
-                    );
-
-                } else {
-
-                    sb.append(
-                            Double.toString(
-                                    value
-                            )
-                    );
-                }
-            }
-
-            sb.append("\n");
-        }
-
-        return
-                sb.toString();
     }
 
     private String decodeDelimiter(
@@ -1151,8 +1293,32 @@ public class AndroidBridge {
         return delimiter;
     }
 
+    private String csvSafe(
+            String value,
+            String delimiter
+    ) {
+
+        if (!",".equals(delimiter)) {
+            return value;
+        }
+
+        if (value.contains(",") ||
+                value.contains("\"") ||
+                value.contains("\n")) {
+
+            return "\"" +
+                    value.replace(
+                            "\"",
+                            "\"\""
+                    ) +
+                    "\"";
+        }
+
+        return value;
+    }
+
     // ============================================================
-    // LEGACY CSV EXPORT
+    // LEGACY EXPORT
     // ============================================================
 
     @JavascriptInterface
@@ -1208,9 +1374,7 @@ public class AndroidBridge {
 
         try (
                 FileOutputStream fos =
-                        new FileOutputStream(
-                                out
-                        )
+                        new FileOutputStream(out)
         ) {
 
             fos.write(
@@ -1261,9 +1425,7 @@ public class AndroidBridge {
 
         return new BufferedReader(
                 new InputStreamReader(
-                        new FileInputStream(
-                                file
-                        ),
+                        new FileInputStream(file),
                         StandardCharsets.UTF_8
                 )
         );
@@ -1282,34 +1444,22 @@ public class AndroidBridge {
         }
 
         JSONObject a =
-                curve.getJSONObject(
-                        start
-                );
+                curve.getJSONObject(start);
 
         JSONObject b =
-                curve.getJSONObject(
-                        end
-                );
+                curve.getJSONObject(end);
 
         double dr =
-                b.getDouble(
-                        "radius_kpc"
-                ) -
-                        a.getDouble(
-                                "radius_kpc"
-                        );
+                b.getDouble("radius_kpc") -
+                        a.getDouble("radius_kpc");
 
         if (Math.abs(dr) < 1e-12) {
             return 0.0;
         }
 
         return (
-                b.getDouble(
-                        "v_obs_kms"
-                ) -
-                        a.getDouble(
-                                "v_obs_kms"
-                        )
+                b.getDouble("v_obs_kms") -
+                        a.getDouble("v_obs_kms")
         ) / dr;
     }
 
@@ -1324,32 +1474,20 @@ public class AndroidBridge {
         }
 
         List<Double> copy =
-                new ArrayList<>(
-                        values
-                );
+                new ArrayList<>(values);
 
-        Collections.sort(
-                copy
-        );
+        Collections.sort(copy);
 
-        int n =
-                copy.size();
+        int n = copy.size();
 
         if (n % 2 == 1) {
-
-            return copy.get(
-                    n / 2
-            );
+            return copy.get(n / 2);
         }
 
         return 0.5 *
                 (
-                        copy.get(
-                                n / 2 - 1
-                        ) +
-                                copy.get(
-                                        n / 2
-                                )
+                        copy.get(n / 2 - 1) +
+                                copy.get(n / 2)
                 );
     }
 
@@ -1377,22 +1515,15 @@ public class AndroidBridge {
 
         HttpURLConnection connection =
                 (HttpURLConnection)
-                        new URL(
-                                urlString
-                        )
+                        new URL(urlString)
                                 .openConnection();
 
-        connection.setConnectTimeout(
-                15000
-        );
-
-        connection.setReadTimeout(
-                30000
-        );
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
 
         connection.setRequestProperty(
                 "User-Agent",
-                "SPARC-Workbench-Android/1.3"
+                "SPARC-Workbench-Android/1.3.1"
         );
 
         connection.connect();
@@ -1404,8 +1535,7 @@ public class AndroidBridge {
                 HttpURLConnection.HTTP_OK) {
 
             throw new Exception(
-                    "HTTP " +
-                            response
+                    "HTTP " + response
             );
         }
 
@@ -1414,9 +1544,7 @@ public class AndroidBridge {
                         connection.getInputStream();
 
                 FileOutputStream output =
-                        new FileOutputStream(
-                                target
-                        )
+                        new FileOutputStream(target)
         ) {
 
             byte[] buffer =
@@ -1424,13 +1552,8 @@ public class AndroidBridge {
 
             int count;
 
-            while (
-                    (count =
-                            input.read(
-                                    buffer
-                            ))
-                            != -1
-            ) {
+            while ((count =
+                    input.read(buffer)) != -1) {
 
                 output.write(
                         buffer,
@@ -1452,28 +1575,19 @@ public class AndroidBridge {
 
         String escaped =
                 json
-                        .replace(
-                                "\\",
-                                "\\\\"
-                        )
-                        .replace(
-                                "'",
-                                "\\'"
-                        );
+                        .replace("\\", "\\\\")
+                        .replace("'", "\\'");
 
         activity.runOnUiThread(
-
                 () ->
                         webView.evaluateJavascript(
-
                                 "window." +
                                         function +
                                         "('" +
                                         escaped +
                                         "')",
-
                                 null
                         )
         );
     }
-}
+                }
