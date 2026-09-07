@@ -3,6 +3,7 @@ package org.sparcworkbench.app;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -32,6 +33,31 @@ public class AndroidBridge {
 
     private final Activity activity;
     private final WebView webView;
+    private final SharedPreferences prefs;
+
+    private static final String PREFS_NAME =
+            "sparc_workbench_preferences";
+
+    private static final String KEY_SESSION =
+            "session_json";
+
+    private static final String KEY_LAST_UPDATE_CHECK =
+            "last_update_check_ms";
+
+    private static final String KEY_META_REMOTE_LENGTH =
+            "meta_remote_length";
+
+    private static final String KEY_MASS_REMOTE_LENGTH =
+            "mass_remote_length";
+
+    private static final String KEY_META_REMOTE_MODIFIED =
+            "meta_remote_modified";
+
+    private static final String KEY_MASS_REMOTE_MODIFIED =
+            "mass_remote_modified";
+
+    private static final long UPDATE_CHECK_INTERVAL_MS =
+            24L * 60L * 60L * 1000L;
 
     private static final String META_URL =
             "https://astroweb.cwru.edu/SPARC/SPARC_Lelli2016c.mrt";
@@ -42,42 +68,355 @@ public class AndroidBridge {
     public AndroidBridge(Activity activity, WebView webView) {
         this.activity = activity;
         this.webView = webView;
+
+        this.prefs =
+                activity.getSharedPreferences(
+                        PREFS_NAME,
+                        Activity.MODE_PRIVATE
+                );
     }
 
     // ============================================================
-    // DATA LOAD
+    // STARTUP BOOTSTRAP
+    // ============================================================
+
+    @JavascriptInterface
+    public void bootstrapApp() {
+
+        new Thread(() -> {
+
+            JSONObject result =
+                    new JSONObject();
+
+            try {
+
+                result.put(
+                        "ok",
+                        true
+                );
+
+                result.put(
+                        "stage",
+                        "initializing"
+                );
+
+                File dir =
+                        sparcDirectory();
+
+                if (!dir.exists() &&
+                        !dir.mkdirs()) {
+
+                    throw new Exception(
+                            "Could not create SPARC data directory."
+                    );
+                }
+
+                File meta =
+                        metadataFile();
+
+                File mass =
+                        massModelFile();
+
+                boolean hadMeta =
+                        validCachedFile(meta);
+
+                boolean hadMass =
+                        validCachedFile(mass);
+
+                boolean downloaded =
+                        false;
+
+                boolean updated =
+                        false;
+
+                boolean checkedRemote =
+                        false;
+
+                boolean updateCheckFailed =
+                        false;
+
+                // ------------------------------------------------
+                // First launch / missing cache
+                // ------------------------------------------------
+
+                if (!hadMeta) {
+
+                    downloadFile(
+                            META_URL,
+                            meta
+                    );
+
+                    downloaded = true;
+                }
+
+                if (!hadMass) {
+
+                    downloadFile(
+                            MASS_URL,
+                            mass
+                    );
+
+                    downloaded = true;
+                }
+
+                // ------------------------------------------------
+                // Periodic remote update check
+                // ------------------------------------------------
+
+                long now =
+                        System.currentTimeMillis();
+
+                long lastCheck =
+                        prefs.getLong(
+                                KEY_LAST_UPDATE_CHECK,
+                                0L
+                        );
+
+                boolean updateCheckDue =
+                        now - lastCheck >=
+                                UPDATE_CHECK_INTERVAL_MS;
+
+                if (updateCheckDue &&
+                        validCachedFile(meta) &&
+                        validCachedFile(mass)) {
+
+                    checkedRemote = true;
+
+                    try {
+
+                        boolean metaUpdated =
+                                updateIfRemoteChanged(
+                                        META_URL,
+                                        meta,
+                                        KEY_META_REMOTE_LENGTH,
+                                        KEY_META_REMOTE_MODIFIED
+                                );
+
+                        boolean massUpdated =
+                                updateIfRemoteChanged(
+                                        MASS_URL,
+                                        mass,
+                                        KEY_MASS_REMOTE_LENGTH,
+                                        KEY_MASS_REMOTE_MODIFIED
+                                );
+
+                        updated =
+                                metaUpdated ||
+                                massUpdated;
+
+                        prefs.edit()
+                                .putLong(
+                                        KEY_LAST_UPDATE_CHECK,
+                                        now
+                                )
+                                .apply();
+
+                    } catch (Exception ignored) {
+
+                        /*
+                         * Startup should still succeed when offline
+                         * as long as valid cached data exists.
+                         */
+
+                        updateCheckFailed =
+                                true;
+                    }
+                }
+
+                if (!validCachedFile(meta) ||
+                        !validCachedFile(mass)) {
+
+                    throw new Exception(
+                            "SPARC cache is incomplete."
+                    );
+                }
+
+                JSONArray catalog =
+                        new JSONArray(
+                                getGalaxyCatalog()
+                        );
+
+                JSONObject session =
+                        getStoredSessionObject();
+
+                String dataState;
+
+                if (updated) {
+
+                    dataState =
+                            "updated";
+
+                } else if (downloaded) {
+
+                    dataState =
+                            "downloaded";
+
+                } else {
+
+                    dataState =
+                            "cached";
+                }
+
+                result.put(
+                        "stage",
+                        "ready"
+                );
+
+                result.put(
+                        "data_state",
+                        dataState
+                );
+
+                result.put(
+                        "checked_remote",
+                        checkedRemote
+                );
+
+                result.put(
+                        "update_check_failed",
+                        updateCheckFailed
+                );
+
+                result.put(
+                        "catalog_count",
+                        catalog.length()
+                );
+
+                result.put(
+                        "metadata_bytes",
+                        meta.length()
+                );
+
+                result.put(
+                        "mass_model_bytes",
+                        mass.length()
+                );
+
+                result.put(
+                        "session",
+                        session
+                );
+
+                result.put(
+                        "last_update_check_ms",
+                        prefs.getLong(
+                                KEY_LAST_UPDATE_CHECK,
+                                0L
+                        )
+                );
+
+            } catch (Exception e) {
+
+                try {
+
+                    result.put(
+                            "ok",
+                            false
+                    );
+
+                    result.put(
+                            "stage",
+                            "error"
+                    );
+
+                    result.put(
+                            "error",
+                            e.toString()
+                    );
+
+                } catch (Exception ignored) {
+                }
+            }
+
+            sendToJs(
+                    "onBootstrapComplete",
+                    result.toString()
+            );
+        }).start();
+    }
+
+    // ============================================================
+    // MANUAL DATA REFRESH
     // ============================================================
 
     @JavascriptInterface
     public void loadSparcData() {
-        new Thread(() -> {
-            try {
-                File dir = new File(activity.getFilesDir(), "sparc");
 
-                if (!dir.exists() && !dir.mkdirs()) {
-                    throw new Exception("Could not create SPARC data directory.");
+        new Thread(() -> {
+
+            try {
+
+                File dir =
+                        sparcDirectory();
+
+                if (!dir.exists() &&
+                        !dir.mkdirs()) {
+
+                    throw new Exception(
+                            "Could not create SPARC data directory."
+                    );
                 }
 
-                File meta = new File(dir, "SPARC_Lelli2016c.mrt");
-                File mass = new File(dir, "MassModels_Lelli2016c.mrt");
+                File meta =
+                        metadataFile();
 
-                downloadIfNeeded(META_URL, meta);
-                downloadIfNeeded(MASS_URL, mass);
+                File mass =
+                        massModelFile();
 
-                JSONObject result = new JSONObject();
-                result.put("ok", true);
-                result.put("metadataBytes", meta.length());
-                result.put("massModelBytes", mass.length());
+                downloadIfNeeded(
+                        META_URL,
+                        meta
+                );
 
-                sendToJs("onSparcLoaded", result.toString());
+                downloadIfNeeded(
+                        MASS_URL,
+                        mass
+                );
+
+                JSONObject result =
+                        new JSONObject();
+
+                result.put(
+                        "ok",
+                        true
+                );
+
+                result.put(
+                        "metadataBytes",
+                        meta.length()
+                );
+
+                result.put(
+                        "massModelBytes",
+                        mass.length()
+                );
+
+                sendToJs(
+                        "onSparcLoaded",
+                        result.toString()
+                );
 
             } catch (Exception e) {
-                try {
-                    JSONObject result = new JSONObject();
-                    result.put("ok", false);
-                    result.put("error", e.toString());
 
-                    sendToJs("onSparcLoaded", result.toString());
+                try {
+
+                    JSONObject result =
+                            new JSONObject();
+
+                    result.put(
+                            "ok",
+                            false
+                    );
+
+                    result.put(
+                            "error",
+                            e.toString()
+                    );
+
+                    sendToJs(
+                            "onSparcLoaded",
+                            result.toString()
+                    );
 
                 } catch (Exception ignored) {
                 }
@@ -86,35 +425,292 @@ public class AndroidBridge {
     }
 
     // ============================================================
+    // SESSION / USER SETTINGS
+    // ============================================================
+
+    @JavascriptInterface
+    public String saveSessionState(
+            String json
+    ) {
+
+        try {
+
+            JSONObject state =
+                    new JSONObject(
+                            json
+                    );
+
+            prefs.edit()
+                    .putString(
+                            KEY_SESSION,
+                            state.toString()
+                    )
+                    .apply();
+
+            return "OK";
+
+        } catch (Exception e) {
+
+            return "ERROR: " + e;
+        }
+    }
+
+    @JavascriptInterface
+    public String getSessionState() {
+
+        return getStoredSessionObject()
+                .toString();
+    }
+
+    @JavascriptInterface
+    public String clearSessionState() {
+
+        prefs.edit()
+                .remove(
+                        KEY_SESSION
+                )
+                .apply();
+
+        return "OK";
+    }
+
+    private JSONObject getStoredSessionObject() {
+
+        try {
+
+            String stored =
+                    prefs.getString(
+                            KEY_SESSION,
+                            "{}"
+                    );
+
+            if (stored == null ||
+                    stored.trim().isEmpty()) {
+
+                return new JSONObject();
+            }
+
+            return new JSONObject(
+                    stored
+            );
+
+        } catch (Exception ignored) {
+
+            return new JSONObject();
+        }
+    }
+
+    // ============================================================
+    // SAVED EXPORT PRESET STORAGE FOUNDATION
+    // ============================================================
+
+    @JavascriptInterface
+    public String saveExportPreset(
+            String presetName,
+            String styleJson
+    ) {
+
+        try {
+
+            String safeName =
+                    presetName == null
+                            ? ""
+                            : presetName.trim();
+
+            if (safeName.isEmpty()) {
+
+                return "ERROR: Preset name is required.";
+            }
+
+            JSONObject style =
+                    new JSONObject(
+                            styleJson
+                    );
+
+            prefs.edit()
+                    .putString(
+                            "export_preset_" +
+                                    safeName,
+                            style.toString()
+                    )
+                    .apply();
+
+            return "OK";
+
+        } catch (Exception e) {
+
+            return "ERROR: " + e;
+        }
+    }
+
+    @JavascriptInterface
+    public String getExportPreset(
+            String presetName
+    ) {
+
+        String stored =
+                prefs.getString(
+                        "export_preset_" +
+                                presetName,
+                        ""
+                );
+
+        return stored == null
+                ? ""
+                : stored;
+    }
+
+    @JavascriptInterface
+    public String deleteExportPreset(
+            String presetName
+    ) {
+
+        prefs.edit()
+                .remove(
+                        "export_preset_" +
+                                presetName
+                )
+                .apply();
+
+        return "OK";
+    }
+
+    @JavascriptInterface
+    public String listSavedExportPresets() {
+
+        JSONArray arr =
+                new JSONArray();
+
+        try {
+
+            for (String key :
+                    prefs.getAll()
+                            .keySet()) {
+
+                if (key.startsWith(
+                        "export_preset_"
+                )) {
+
+                    arr.put(
+                            key.substring(
+                                    "export_preset_"
+                                            .length()
+                            )
+                    );
+                }
+            }
+
+        } catch (Exception ignored) {
+        }
+
+        return arr.toString();
+    }
+
+    // ============================================================
     // METADATA
     // ============================================================
 
-    private JSONObject parseMetadataRow(String line) {
+    private JSONObject parseMetadataRow(
+            String line
+    ) {
+
         try {
-            String[] p = line.trim().split("\\s+");
+
+            String[] p =
+                    line.trim()
+                            .split("\\s+");
 
             if (p.length < 18) {
                 return null;
             }
 
-            String galaxy = p[0];
-            int hubble = Integer.parseInt(p[1]);
-            double distance = Double.parseDouble(p[2]);
-            double distanceError = Double.parseDouble(p[3]);
-            int distanceMethod = Integer.parseInt(p[4]);
-            double inclination = Double.parseDouble(p[5]);
-            double inclinationError = Double.parseDouble(p[6]);
-            double luminosity36 = Double.parseDouble(p[7]);
-            double luminosityError = Double.parseDouble(p[8]);
-            double effectiveRadius = Double.parseDouble(p[9]);
-            double effectiveSurfaceBrightness = Double.parseDouble(p[10]);
-            double diskScaleLength = Double.parseDouble(p[11]);
-            double diskCentralSurfaceBrightness = Double.parseDouble(p[12]);
-            double mhi = Double.parseDouble(p[13]);
-            double rhi = Double.parseDouble(p[14]);
-            double vflat = Double.parseDouble(p[15]);
-            double vflatError = Double.parseDouble(p[16]);
-            int quality = Integer.parseInt(p[17]);
+            String galaxy =
+                    p[0];
+
+            int hubble =
+                    Integer.parseInt(
+                            p[1]
+                    );
+
+            double distance =
+                    Double.parseDouble(
+                            p[2]
+                    );
+
+            double distanceError =
+                    Double.parseDouble(
+                            p[3]
+                    );
+
+            int distanceMethod =
+                    Integer.parseInt(
+                            p[4]
+                    );
+
+            double inclination =
+                    Double.parseDouble(
+                            p[5]
+                    );
+
+            double inclinationError =
+                    Double.parseDouble(
+                            p[6]
+                    );
+
+            double luminosity36 =
+                    Double.parseDouble(
+                            p[7]
+                    );
+
+            double luminosityError =
+                    Double.parseDouble(
+                            p[8]
+                    );
+
+            double effectiveRadius =
+                    Double.parseDouble(
+                            p[9]
+                    );
+
+            double effectiveSurfaceBrightness =
+                    Double.parseDouble(
+                            p[10]
+                    );
+
+            double diskScaleLength =
+                    Double.parseDouble(
+                            p[11]
+                    );
+
+            double diskCentralSurfaceBrightness =
+                    Double.parseDouble(
+                            p[12]
+                    );
+
+            double mhi =
+                    Double.parseDouble(
+                            p[13]
+                    );
+
+            double rhi =
+                    Double.parseDouble(
+                            p[14]
+                    );
+
+            double vflat =
+                    Double.parseDouble(
+                            p[15]
+                    );
+
+            double vflatError =
+                    Double.parseDouble(
+                            p[16]
+                    );
+
+            int quality =
+                    Integer.parseInt(
+                            p[17]
+                    );
 
             if (galaxy.isEmpty()) return null;
             if (hubble < 0 || hubble > 11) return null;
@@ -125,61 +721,158 @@ public class AndroidBridge {
             if (inclinationError < 0) return null;
             if (quality < 1 || quality > 3) return null;
 
-            JSONObject obj = new JSONObject();
+            JSONObject obj =
+                    new JSONObject();
 
-            obj.put("galaxy", galaxy);
-            obj.put("hubble_type", hubble);
-            obj.put("distance_mpc", distance);
-            obj.put("distance_error_mpc", distanceError);
-            obj.put("distance_method", distanceMethod);
-            obj.put("inclination_deg", inclination);
-            obj.put("inclination_error_deg", inclinationError);
-            obj.put("luminosity_36", luminosity36);
-            obj.put("luminosity_error", luminosityError);
-            obj.put("effective_radius_kpc", effectiveRadius);
-            obj.put("effective_surface_brightness", effectiveSurfaceBrightness);
-            obj.put("disk_scale_length_kpc", diskScaleLength);
-            obj.put("disk_central_surface_brightness", diskCentralSurfaceBrightness);
-            obj.put("mhi", mhi);
-            obj.put("rhi_kpc", rhi);
-            obj.put("vflat_kms", vflat);
-            obj.put("vflat_error_kms", vflatError);
-            obj.put("quality", quality);
+            obj.put(
+                    "galaxy",
+                    galaxy
+            );
+
+            obj.put(
+                    "hubble_type",
+                    hubble
+            );
+
+            obj.put(
+                    "distance_mpc",
+                    distance
+            );
+
+            obj.put(
+                    "distance_error_mpc",
+                    distanceError
+            );
+
+            obj.put(
+                    "distance_method",
+                    distanceMethod
+            );
+
+            obj.put(
+                    "inclination_deg",
+                    inclination
+            );
+
+            obj.put(
+                    "inclination_error_deg",
+                    inclinationError
+            );
+
+            obj.put(
+                    "luminosity_36",
+                    luminosity36
+            );
+
+            obj.put(
+                    "luminosity_error",
+                    luminosityError
+            );
+
+            obj.put(
+                    "effective_radius_kpc",
+                    effectiveRadius
+            );
+
+            obj.put(
+                    "effective_surface_brightness",
+                    effectiveSurfaceBrightness
+            );
+
+            obj.put(
+                    "disk_scale_length_kpc",
+                    diskScaleLength
+            );
+
+            obj.put(
+                    "disk_central_surface_brightness",
+                    diskCentralSurfaceBrightness
+            );
+
+            obj.put(
+                    "mhi",
+                    mhi
+            );
+
+            obj.put(
+                    "rhi_kpc",
+                    rhi
+            );
+
+            obj.put(
+                    "vflat_kms",
+                    vflat
+            );
+
+            obj.put(
+                    "vflat_error_kms",
+                    vflatError
+            );
+
+            obj.put(
+                    "quality",
+                    quality
+            );
 
             return obj;
 
         } catch (Exception ignored) {
+
             return null;
         }
     }
 
     @JavascriptInterface
     public String getGalaxyCatalog() {
-        JSONArray result = new JSONArray();
+
+        JSONArray result =
+                new JSONArray();
 
         try {
-            File file = metadataFile();
+
+            File file =
+                    metadataFile();
 
             if (!file.exists()) {
+
                 return result.toString();
             }
 
-            LinkedHashSet<String> galaxies = new LinkedHashSet<>();
+            LinkedHashSet<String> galaxies =
+                    new LinkedHashSet<>();
 
-            try (BufferedReader reader = readerFor(file)) {
+            try (
+                    BufferedReader reader =
+                            readerFor(file)
+            ) {
+
                 String line;
 
-                while ((line = reader.readLine()) != null) {
-                    JSONObject meta = parseMetadataRow(line);
+                while ((line =
+                        reader.readLine()) != null) {
+
+                    JSONObject meta =
+                            parseMetadataRow(
+                                    line
+                            );
 
                     if (meta != null) {
-                        galaxies.add(meta.getString("galaxy"));
+
+                        galaxies.add(
+                                meta.getString(
+                                        "galaxy"
+                                )
+                        );
                     }
                 }
             }
 
-            for (String galaxy : galaxies) {
-                result.put(galaxy);
+            for (String galaxy :
+                    galaxies) {
+
+                result.put(
+                        galaxy
+                );
             }
 
         } catch (Exception ignored) {
@@ -189,22 +882,42 @@ public class AndroidBridge {
     }
 
     @JavascriptInterface
-    public String getGalaxyMetadata(String galaxyName) {
+    public String getGalaxyMetadata(
+            String galaxyName
+    ) {
+
         try {
-            File file = metadataFile();
+
+            File file =
+                    metadataFile();
 
             if (!file.exists()) {
+
                 return "{}";
             }
 
-            try (BufferedReader reader = readerFor(file)) {
+            try (
+                    BufferedReader reader =
+                            readerFor(file)
+            ) {
+
                 String line;
 
-                while ((line = reader.readLine()) != null) {
-                    JSONObject meta = parseMetadataRow(line);
+                while ((line =
+                        reader.readLine()) != null) {
+
+                    JSONObject meta =
+                            parseMetadataRow(
+                                    line
+                            );
 
                     if (meta != null &&
-                            galaxyName.equals(meta.optString("galaxy"))) {
+                            galaxyName.equals(
+                                    meta.optString(
+                                            "galaxy"
+                                    )
+                            )) {
+
                         return meta.toString();
                     }
                 }
@@ -221,44 +934,130 @@ public class AndroidBridge {
     // ============================================================
 
     @JavascriptInterface
-    public String getRotationCurve(String galaxyName) {
-        JSONArray rows = new JSONArray();
+    public String getRotationCurve(
+            String galaxyName
+    ) {
+
+        JSONArray rows =
+                new JSONArray();
 
         try {
-            File file = massModelFile();
+
+            File file =
+                    massModelFile();
 
             if (!file.exists()) {
+
                 return rows.toString();
             }
 
-            try (BufferedReader reader = readerFor(file)) {
+            try (
+                    BufferedReader reader =
+                            readerFor(file)
+            ) {
+
                 String line;
 
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
+                while ((line =
+                        reader.readLine()) != null) {
 
-                    if (line.isEmpty()) continue;
+                    line =
+                            line.trim();
 
-                    String[] p = line.split("\\s+");
+                    if (line.isEmpty()) {
+                        continue;
+                    }
 
-                    if (p.length < 10) continue;
-                    if (!p[0].equals(galaxyName)) continue;
+                    String[] p =
+                            line.split("\\s+");
+
+                    if (p.length < 10) {
+                        continue;
+                    }
+
+                    if (!p[0].equals(
+                            galaxyName
+                    )) {
+
+                        continue;
+                    }
 
                     try {
-                        JSONObject row = new JSONObject();
 
-                        row.put("galaxy", p[0]);
-                        row.put("distance_mpc", Double.parseDouble(p[1]));
-                        row.put("radius_kpc", Double.parseDouble(p[2]));
-                        row.put("v_obs_kms", Double.parseDouble(p[3]));
-                        row.put("v_err_kms", Double.parseDouble(p[4]));
-                        row.put("v_gas_kms", Double.parseDouble(p[5]));
-                        row.put("v_disk_kms", Double.parseDouble(p[6]));
-                        row.put("v_bulge_kms", Double.parseDouble(p[7]));
-                        row.put("sb_disk", Double.parseDouble(p[8]));
-                        row.put("sb_bulge", Double.parseDouble(p[9]));
+                        JSONObject row =
+                                new JSONObject();
 
-                        rows.put(row);
+                        row.put(
+                                "galaxy",
+                                p[0]
+                        );
+
+                        row.put(
+                                "distance_mpc",
+                                Double.parseDouble(
+                                        p[1]
+                                )
+                        );
+
+                        row.put(
+                                "radius_kpc",
+                                Double.parseDouble(
+                                        p[2]
+                                )
+                        );
+
+                        row.put(
+                                "v_obs_kms",
+                                Double.parseDouble(
+                                        p[3]
+                                )
+                        );
+
+                        row.put(
+                                "v_err_kms",
+                                Double.parseDouble(
+                                        p[4]
+                                )
+                        );
+
+                        row.put(
+                                "v_gas_kms",
+                                Double.parseDouble(
+                                        p[5]
+                                )
+                        );
+
+                        row.put(
+                                "v_disk_kms",
+                                Double.parseDouble(
+                                        p[6]
+                                )
+                        );
+
+                        row.put(
+                                "v_bulge_kms",
+                                Double.parseDouble(
+                                        p[7]
+                                )
+                        );
+
+                        row.put(
+                                "sb_disk",
+                                Double.parseDouble(
+                                        p[8]
+                                )
+                        );
+
+                        row.put(
+                                "sb_bulge",
+                                Double.parseDouble(
+                                        p[9]
+                                )
+                        );
+
+                        rows.put(
+                                row
+                        );
 
                     } catch (Exception ignored) {
                     }
@@ -276,33 +1075,65 @@ public class AndroidBridge {
     // ============================================================
 
     @JavascriptInterface
-    public String getDiagnostics(String galaxyName) {
-        JSONObject out = new JSONObject();
+    public String getDiagnostics(
+            String galaxyName
+    ) {
+
+        JSONObject out =
+                new JSONObject();
 
         try {
+
             JSONArray curve =
-                    new JSONArray(getRotationCurve(galaxyName));
+                    new JSONArray(
+                            getRotationCurve(
+                                    galaxyName
+                            )
+                    );
 
             JSONObject meta =
-                    new JSONObject(getGalaxyMetadata(galaxyName));
+                    new JSONObject(
+                            getGalaxyMetadata(
+                                    galaxyName
+                            )
+                    );
 
-            int n = curve.length();
+            int n =
+                    curve.length();
 
-            out.put("galaxy", galaxyName);
-            out.put("point_count", n);
+            out.put(
+                    "galaxy",
+                    galaxyName
+            );
+
+            out.put(
+                    "point_count",
+                    n
+            );
 
             if (n == 0) {
-                out.put("ok", false);
+
+                out.put(
+                        "ok",
+                        false
+                );
+
                 return out.toString();
             }
 
             double rMin =
                     curve.getJSONObject(0)
-                            .getDouble("radius_kpc");
+                            .getDouble(
+                                    "radius_kpc"
+                            );
 
             double rMax =
-                    curve.getJSONObject(n - 1)
-                            .getDouble("radius_kpc");
+                    curve.getJSONObject(
+                                    n - 1
+                            )
+                            .getDouble(
+                                    "radius_kpc"
+                            );
 
             double radialExtent =
                     rMax - rMin;
@@ -311,7 +1142,10 @@ public class AndroidBridge {
                     segmentSlope(
                             curve,
                             0,
-                            Math.max(1, n / 5)
+                            Math.max(
+                                    1,
+                                    n / 5
+                            )
                     );
 
             double outerSlope =
@@ -319,108 +1153,210 @@ public class AndroidBridge {
                             curve,
                             Math.max(
                                     0,
-                                    n - Math.max(3, n / 4)
+                                    n -
+                                            Math.max(
+                                                    3,
+                                                    n / 4
+                                            )
                             ),
                             n - 1
                     );
 
-            List<Double> fracErrors = new ArrayList<>();
+            List<Double> fracErrors =
+                    new ArrayList<>();
 
-            boolean bulgePresent = false;
+            boolean bulgePresent =
+                    false;
 
-            for (int i = 0; i < n; i++) {
+            for (int i = 0;
+                 i < n;
+                 i++) {
+
                 JSONObject row =
                         curve.getJSONObject(i);
 
                 double v =
-                        row.getDouble("v_obs_kms");
+                        row.getDouble(
+                                "v_obs_kms"
+                        );
 
                 double e =
-                        row.getDouble("v_err_kms");
+                        row.getDouble(
+                                "v_err_kms"
+                        );
 
                 double vb =
-                        row.getDouble("v_bulge_kms");
+                        row.getDouble(
+                                "v_bulge_kms"
+                        );
 
-                if (v > 0 && e >= 0) {
-                    fracErrors.add(e / v);
+                if (v > 0 &&
+                        e >= 0) {
+
+                    fracErrors.add(
+                            e / v
+                    );
                 }
 
-                if (Math.abs(vb) > 0.01) {
-                    bulgePresent = true;
+                if (Math.abs(vb) >
+                        0.01) {
+
+                    bulgePresent =
+                            true;
                 }
             }
 
             double medianFracError =
-                    median(fracErrors);
+                    median(
+                            fracErrors
+                    );
 
             JSONObject last =
-                    curve.getJSONObject(n - 1);
+                    curve.getJSONObject(
+                            n - 1
+                    );
 
             double vObsOuter =
-                    last.getDouble("v_obs_kms");
+                    last.getDouble(
+                            "v_obs_kms"
+                    );
 
             double vGas =
-                    last.getDouble("v_gas_kms");
+                    last.getDouble(
+                            "v_gas_kms"
+                    );
 
             double vDisk =
-                    last.getDouble("v_disk_kms");
+                    last.getDouble(
+                            "v_disk_kms"
+                    );
 
             double vBulge =
-                    last.getDouble("v_bulge_kms");
+                    last.getDouble(
+                            "v_bulge_kms"
+                    );
 
             double vBarOuter =
                     Math.sqrt(
                             Math.max(
                                     0.0,
-                                    signedSquare(vGas) +
-                                            signedSquare(vDisk) +
-                                            signedSquare(vBulge)
+                                    signedSquare(
+                                            vGas
+                                    ) +
+                                            signedSquare(
+                                                    vDisk
+                                            ) +
+                                            signedSquare(
+                                                    vBulge
+                                            )
                             )
                     );
 
             double obsToBar =
                     vBarOuter > 0
-                            ? vObsOuter / vBarOuter
+                            ? vObsOuter /
+                            vBarOuter
                             : Double.NaN;
 
             String outerClass;
 
             if (outerSlope > 1.0) {
-                outerClass = "rising";
+
+                outerClass =
+                        "rising";
+
             } else if (outerSlope < -1.0) {
-                outerClass = "declining";
+
+                outerClass =
+                        "declining";
+
             } else {
-                outerClass = "flat";
+
+                outerClass =
+                        "flat";
             }
 
             double vflat =
-                    meta.optDouble("vflat_kms", 0.0);
+                    meta.optDouble(
+                            "vflat_kms",
+                            0.0
+                    );
 
             double vflatResidual =
                     vflat > 0
-                            ? vObsOuter - vflat
+                            ? vObsOuter -
+                            vflat
                             : Double.NaN;
 
-            out.put("ok", true);
-            out.put("r_min_kpc", rMin);
-            out.put("r_max_kpc", rMax);
-            out.put("radial_extent_kpc", radialExtent);
-            out.put("inner_slope_kms_per_kpc", innerSlope);
-            out.put("outer_slope_kms_per_kpc", outerSlope);
-            out.put("outer_class", outerClass);
-            out.put("median_fractional_velocity_error", medianFracError);
-            out.put("bulge_present", bulgePresent);
-            out.put("v_outer_kms", vObsOuter);
-            out.put("v_baryonic_proxy_outer_kms", vBarOuter);
+            out.put(
+                    "ok",
+                    true
+            );
 
-            if (Double.isFinite(obsToBar)) {
+            out.put(
+                    "r_min_kpc",
+                    rMin
+            );
+
+            out.put(
+                    "r_max_kpc",
+                    rMax
+            );
+
+            out.put(
+                    "radial_extent_kpc",
+                    radialExtent
+            );
+
+            out.put(
+                    "inner_slope_kms_per_kpc",
+                    innerSlope
+            );
+
+            out.put(
+                    "outer_slope_kms_per_kpc",
+                    outerSlope
+            );
+
+            out.put(
+                    "outer_class",
+                    outerClass
+            );
+
+            out.put(
+                    "median_fractional_velocity_error",
+                    medianFracError
+            );
+
+            out.put(
+                    "bulge_present",
+                    bulgePresent
+            );
+
+            out.put(
+                    "v_outer_kms",
+                    vObsOuter
+            );
+
+            out.put(
+                    "v_baryonic_proxy_outer_kms",
+                    vBarOuter
+            );
+
+            if (Double.isFinite(
+                    obsToBar
+            )) {
+
                 out.put(
                         "obs_to_baryonic_outer_ratio",
                         obsToBar
                 );
             }
 
-            if (Double.isFinite(vflatResidual)) {
+            if (Double.isFinite(
+                    vflatResidual
+            )) {
+
                 out.put(
                         "vflat_residual_kms",
                         vflatResidual
@@ -428,9 +1364,19 @@ public class AndroidBridge {
             }
 
         } catch (Exception e) {
+
             try {
-                out.put("ok", false);
-                out.put("error", e.toString());
+
+                out.put(
+                        "ok",
+                        false
+                );
+
+                out.put(
+                        "error",
+                        e.toString()
+                );
+
             } catch (Exception ignored) {
             }
         }
@@ -443,41 +1389,67 @@ public class AndroidBridge {
     // ============================================================
 
     @JavascriptInterface
-    public String getCohort(String cohortName) {
-        JSONArray result = new JSONArray();
+    public String getCohort(
+            String cohortName
+    ) {
+
+        JSONArray result =
+                new JSONArray();
 
         try {
-            File file = metadataFile();
+
+            File file =
+                    metadataFile();
 
             if (!file.exists()) {
+
                 return result.toString();
             }
 
-            try (BufferedReader reader = readerFor(file)) {
+            try (
+                    BufferedReader reader =
+                            readerFor(file)
+            ) {
+
                 String line;
 
-                while ((line = reader.readLine()) != null) {
-                    JSONObject meta = parseMetadataRow(line);
+                while ((line =
+                        reader.readLine()) != null) {
+
+                    JSONObject meta =
+                            parseMetadataRow(
+                                    line
+                            );
 
                     if (meta == null) {
                         continue;
                     }
 
                     String galaxy =
-                            meta.getString("galaxy");
+                            meta.getString(
+                                    "galaxy"
+                            );
 
                     int quality =
-                            meta.getInt("quality");
+                            meta.getInt(
+                                    "quality"
+                            );
 
                     double inclination =
-                            meta.getDouble("inclination_deg");
+                            meta.getDouble(
+                                    "inclination_deg"
+                            );
 
                     double vflat =
-                            meta.getDouble("vflat_kms");
+                            meta.getDouble(
+                                    "vflat_kms"
+                            );
 
                     JSONObject diag =
                             new JSONObject(
-                                    getDiagnostics(galaxy)
+                                    getDiagnostics(
+                                            galaxy
+                                    )
                             );
 
                     int points =
@@ -509,36 +1481,47 @@ public class AndroidBridge {
                     switch (cohortName) {
 
                         case "quality_1":
+
                             include =
                                     quality == 1;
+
                             break;
 
                         case "btfr_ready":
+
                             include =
                                     quality <= 2 &&
                                     vflat > 0 &&
                                     points >= 10;
+
                             break;
 
                         case "bulgeless":
+
                             include =
                                     points > 0 &&
                                     !bulge;
+
                             break;
 
                         case "extended_rotation_curve":
+
                             include =
                                     points >= 15 &&
                                     rMax >= 15.0;
+
                             break;
 
                         case "inclination_safe":
+
                             include =
                                     inclination >= 30.0 &&
                                     inclination <= 85.0;
+
                             break;
 
                         case "uig_benchmark_v1":
+
                             include =
                                     quality == 1 &&
                                     points >= 15 &&
@@ -547,14 +1530,20 @@ public class AndroidBridge {
                                     vflat > 0 &&
                                     rMax >= 8.0 &&
                                     extent >= 6.0;
+
                             break;
 
                         default:
-                            include = false;
+
+                            include =
+                                    false;
                     }
 
                     if (include) {
-                        result.put(galaxy);
+
+                        result.put(
+                                galaxy
+                        );
                     }
                 }
             }
@@ -567,7 +1556,9 @@ public class AndroidBridge {
 
     @JavascriptInterface
     public String listCohorts() {
-        JSONArray arr = new JSONArray();
+
+        JSONArray arr =
+                new JSONArray();
 
         arr.put("quality_1");
         arr.put("btfr_ready");
@@ -585,7 +1576,9 @@ public class AndroidBridge {
 
     @JavascriptInterface
     public String listExportFields() {
-        JSONArray arr = new JSONArray();
+
+        JSONArray arr =
+                new JSONArray();
 
         arr.put("radius_kpc");
         arr.put("v_obs_kms");
@@ -601,7 +1594,9 @@ public class AndroidBridge {
 
     @JavascriptInterface
     public String listExportStyles() {
-        JSONArray arr = new JSONArray();
+
+        JSONArray arr =
+                new JSONArray();
 
         arr.put("canonical_csv");
         arr.put("minimal_csv");
@@ -615,74 +1610,351 @@ public class AndroidBridge {
             String styleName
     ) throws Exception {
 
-        JSONObject style = new JSONObject();
-        JSONArray columns = new JSONArray();
+        JSONObject style =
+                new JSONObject();
 
-        if ("minimal_csv".equals(styleName)) {
+        JSONArray columns =
+                new JSONArray();
 
-            style.put("name", "minimal_csv");
-            style.put("delimiter", ",");
-            style.put("include_header", true);
-            style.put("extension", "csv");
+        if ("minimal_csv".equals(
+                styleName
+        )) {
 
-            columns.put(column("radius_kpc", "radius_kpc", 1.0, 0.0));
-            columns.put(column("v_obs_kms", "v_obs_kms", 1.0, 0.0));
-            columns.put(column("v_err_kms", "v_err_kms", 1.0, 0.0));
+            style.put(
+                    "name",
+                    "minimal_csv"
+            );
 
-        } else if ("uig".equals(styleName)) {
+            style.put(
+                    "delimiter",
+                    ","
+            );
 
-            style.put("name", "uig");
-            style.put("delimiter", ",");
-            style.put("include_header", true);
-            style.put("extension", "txt");
+            style.put(
+                    "include_header",
+                    true
+            );
+
+            style.put(
+                    "extension",
+                    "csv"
+            );
+
+            columns.put(
+                    column(
+                            "radius_kpc",
+                            "radius_kpc",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_obs_kms",
+                            "v_obs_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_err_kms",
+                            "v_err_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+        } else if ("uig".equals(
+                styleName
+        )) {
+
+            style.put(
+                    "name",
+                    "uig"
+            );
+
+            style.put(
+                    "delimiter",
+                    ","
+            );
+
+            style.put(
+                    "include_header",
+                    true
+            );
+
+            style.put(
+                    "extension",
+                    "txt"
+            );
+
             style.put(
                     "galaxy_header_template",
                     "Galaxy name: {galaxy}"
             );
 
-            columns.put(column("radius_kpc", "radius_kpc", 1.0, 0.0));
-            columns.put(column("v_obs_kms", "v_obs", 1.0, 0.0));
-            columns.put(column("v_err_kms", "v_err", 1.0, 0.0));
-            columns.put(column("v_gas_kms", "v_gas", 1.0, 0.0));
-            columns.put(column("v_disk_kms", "v_disk", 1.0, 0.0));
-            columns.put(column("v_bulge_kms", "v_bulge", 1.0, 0.0));
-            columns.put(column("sb_disk", "sb_disk", 1.0, 0.0));
-            columns.put(column("sb_bulge", "sb_bulge", 1.0, 0.0));
+            columns.put(
+                    column(
+                            "radius_kpc",
+                            "radius_kpc",
+                            1.0,
+                            0.0
+                    )
+            );
 
-        } else if ("whitespace".equals(styleName)) {
+            columns.put(
+                    column(
+                            "v_obs_kms",
+                            "v_obs",
+                            1.0,
+                            0.0
+                    )
+            );
 
-            style.put("name", "whitespace");
-            style.put("delimiter", " ");
-            style.put("include_header", true);
-            style.put("extension", "txt");
+            columns.put(
+                    column(
+                            "v_err_kms",
+                            "v_err",
+                            1.0,
+                            0.0
+                    )
+            );
 
-            columns.put(column("radius_kpc", "r", 1.0, 0.0));
-            columns.put(column("v_obs_kms", "vobs", 1.0, 0.0));
-            columns.put(column("v_err_kms", "verr", 1.0, 0.0));
-            columns.put(column("v_gas_kms", "vgas", 1.0, 0.0));
-            columns.put(column("v_disk_kms", "vdisk", 1.0, 0.0));
-            columns.put(column("v_bulge_kms", "vbulge", 1.0, 0.0));
+            columns.put(
+                    column(
+                            "v_gas_kms",
+                            "v_gas",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_disk_kms",
+                            "v_disk",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_bulge_kms",
+                            "v_bulge",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "sb_disk",
+                            "sb_disk",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "sb_bulge",
+                            "sb_bulge",
+                            1.0,
+                            0.0
+                    )
+            );
+
+        } else if ("whitespace".equals(
+                styleName
+        )) {
+
+            style.put(
+                    "name",
+                    "whitespace"
+            );
+
+            style.put(
+                    "delimiter",
+                    " "
+            );
+
+            style.put(
+                    "include_header",
+                    true
+            );
+
+            style.put(
+                    "extension",
+                    "txt"
+            );
+
+            columns.put(
+                    column(
+                            "radius_kpc",
+                            "r",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_obs_kms",
+                            "vobs",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_err_kms",
+                            "verr",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_gas_kms",
+                            "vgas",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_disk_kms",
+                            "vdisk",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_bulge_kms",
+                            "vbulge",
+                            1.0,
+                            0.0
+                    )
+            );
 
         } else {
 
-            style.put("name", "canonical_csv");
-            style.put("delimiter", ",");
-            style.put("include_header", true);
-            style.put("extension", "csv");
-            style.put("flat_cohort", true);
-            style.put("include_galaxy_column", true);
+            style.put(
+                    "name",
+                    "canonical_csv"
+            );
 
-            columns.put(column("radius_kpc", "radius_kpc", 1.0, 0.0));
-            columns.put(column("v_obs_kms", "v_obs_kms", 1.0, 0.0));
-            columns.put(column("v_err_kms", "v_err_kms", 1.0, 0.0));
-            columns.put(column("v_gas_kms", "v_gas_kms", 1.0, 0.0));
-            columns.put(column("v_disk_kms", "v_disk_kms", 1.0, 0.0));
-            columns.put(column("v_bulge_kms", "v_bulge_kms", 1.0, 0.0));
-            columns.put(column("sb_disk", "sb_disk", 1.0, 0.0));
-            columns.put(column("sb_bulge", "sb_bulge", 1.0, 0.0));
+            style.put(
+                    "delimiter",
+                    ","
+            );
+
+            style.put(
+                    "include_header",
+                    true
+            );
+
+            style.put(
+                    "extension",
+                    "csv"
+            );
+
+            style.put(
+                    "flat_cohort",
+                    true
+            );
+
+            style.put(
+                    "include_galaxy_column",
+                    true
+            );
+
+            columns.put(
+                    column(
+                            "radius_kpc",
+                            "radius_kpc",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_obs_kms",
+                            "v_obs_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_err_kms",
+                            "v_err_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_gas_kms",
+                            "v_gas_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_disk_kms",
+                            "v_disk_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "v_bulge_kms",
+                            "v_bulge_kms",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "sb_disk",
+                            "sb_disk",
+                            1.0,
+                            0.0
+                    )
+            );
+
+            columns.put(
+                    column(
+                            "sb_bulge",
+                            "sb_bulge",
+                            1.0,
+                            0.0
+                    )
+            );
         }
 
-        style.put("columns", columns);
+        style.put(
+                "columns",
+                columns
+        );
 
         return style;
     }
@@ -694,12 +1966,28 @@ public class AndroidBridge {
             double offset
     ) throws Exception {
 
-        JSONObject c = new JSONObject();
+        JSONObject c =
+                new JSONObject();
 
-        c.put("source", source);
-        c.put("name", name);
-        c.put("scale", scale);
-        c.put("offset", offset);
+        c.put(
+                "source",
+                source
+        );
+
+        c.put(
+                "name",
+                name
+        );
+
+        c.put(
+                "scale",
+                scale
+        );
+
+        c.put(
+                "offset",
+                offset
+        );
 
         return c;
     }
@@ -715,10 +2003,12 @@ public class AndroidBridge {
     ) {
 
         try {
+
             JSONObject style;
 
             if (styleJson == null ||
-                    styleJson.trim().isEmpty()) {
+                    styleJson.trim()
+                            .isEmpty()) {
 
                 style =
                         builtInExportStyle(
@@ -728,7 +2018,9 @@ public class AndroidBridge {
             } else {
 
                 style =
-                        new JSONObject(styleJson);
+                        new JSONObject(
+                                styleJson
+                        );
             }
 
             return exportGalaxyUsingStyle(
@@ -749,9 +2041,12 @@ public class AndroidBridge {
     ) {
 
         try {
+
             return exportGalaxyUsingStyle(
                     galaxyName,
-                    builtInExportStyle(presetName)
+                    builtInExportStyle(
+                            presetName
+                    )
             );
 
         } catch (Exception e) {
@@ -767,9 +2062,12 @@ public class AndroidBridge {
     ) {
 
         try {
+
             JSONArray galaxies =
                     new JSONArray(
-                            getCohort(cohortName)
+                            getCohort(
+                                    cohortName
+                            )
                     );
 
             JSONObject style =
@@ -796,13 +2094,18 @@ public class AndroidBridge {
     ) {
 
         try {
+
             JSONArray galaxies =
                     new JSONArray(
-                            getCohort(cohortName)
+                            getCohort(
+                                    cohortName
+                            )
                     );
 
             JSONObject style =
-                    new JSONObject(styleJson);
+                    new JSONObject(
+                            styleJson
+                    );
 
             return exportMultipleGalaxies(
                     galaxies,
@@ -827,7 +2130,9 @@ public class AndroidBridge {
 
         JSONArray rows =
                 new JSONArray(
-                        getRotationCurve(galaxyName)
+                        getRotationCurve(
+                                galaxyName
+                        )
                 );
 
         String extension =
@@ -861,7 +2166,9 @@ public class AndroidBridge {
         return saveExportToDownloads(
                 filename,
                 content,
-                mimeTypeForExtension(extension)
+                mimeTypeForExtension(
+                        extension
+                )
         );
     }
 
@@ -890,7 +2197,9 @@ public class AndroidBridge {
                 );
 
         String filename =
-                sanitizeFilename(groupName) +
+                sanitizeFilename(
+                        groupName
+                ) +
                         "_" +
                         styleName +
                         "." +
@@ -898,7 +2207,10 @@ public class AndroidBridge {
 
         String content;
 
-        if (style.optBoolean("flat_cohort", false)) {
+        if (style.optBoolean(
+                "flat_cohort",
+                false
+        )) {
 
             content =
                     renderFlatCohort(
@@ -918,7 +2230,9 @@ public class AndroidBridge {
         return saveExportToDownloads(
                 filename,
                 content,
-                mimeTypeForExtension(extension)
+                mimeTypeForExtension(
+                        extension
+                )
         );
     }
 
@@ -966,20 +2280,35 @@ public class AndroidBridge {
                 );
 
         if (!preamble.isEmpty()) {
-            sb.append(preamble);
 
-            if (!preamble.endsWith("\n")) {
-                sb.append("\n");
+            sb.append(
+                    preamble
+            );
+
+            if (!preamble.endsWith(
+                    "\n"
+            )) {
+
+                sb.append(
+                        "\n"
+                );
             }
         }
 
         if (includeHeader) {
 
             if (includeGalaxyColumn) {
-                sb.append("galaxy_name");
 
-                if (columns.length() > 0) {
-                    sb.append(delimiter);
+                sb.append(
+                        "galaxy_name"
+                );
+
+                if (columns.length() >
+                        0) {
+
+                    sb.append(
+                            delimiter
+                    );
                 }
             }
 
@@ -989,7 +2318,9 @@ public class AndroidBridge {
                     delimiter
             );
 
-            sb.append("\n");
+            sb.append(
+                    "\n"
+            );
         }
 
         for (int g = 0;
@@ -997,11 +2328,15 @@ public class AndroidBridge {
              g++) {
 
             String galaxy =
-                    galaxies.getString(g);
+                    galaxies.getString(
+                            g
+                    );
 
             JSONArray rows =
                     new JSONArray(
-                            getRotationCurve(galaxy)
+                            getRotationCurve(
+                                    galaxy
+                            )
                     );
 
             for (int r = 0;
@@ -1009,7 +2344,9 @@ public class AndroidBridge {
                  r++) {
 
                 JSONObject row =
-                        rows.getJSONObject(r);
+                        rows.getJSONObject(
+                                r
+                        );
 
                 if (includeGalaxyColumn) {
 
@@ -1020,8 +2357,12 @@ public class AndroidBridge {
                             )
                     );
 
-                    if (columns.length() > 0) {
-                        sb.append(delimiter);
+                    if (columns.length() >
+                            0) {
+
+                        sb.append(
+                                delimiter
+                        );
                     }
                 }
 
@@ -1032,7 +2373,9 @@ public class AndroidBridge {
                         delimiter
                 );
 
-                sb.append("\n");
+                sb.append(
+                        "\n"
+                );
             }
         }
 
@@ -1061,10 +2404,17 @@ public class AndroidBridge {
 
         if (!preamble.isEmpty()) {
 
-            all.append(preamble);
+            all.append(
+                    preamble
+            );
 
-            if (!preamble.endsWith("\n")) {
-                all.append("\n");
+            if (!preamble.endsWith(
+                    "\n"
+            )) {
+
+                all.append(
+                        "\n"
+                );
             }
         }
 
@@ -1073,11 +2423,15 @@ public class AndroidBridge {
              i++) {
 
             String galaxy =
-                    galaxies.getString(i);
+                    galaxies.getString(
+                            i
+                    );
 
             JSONArray rows =
                     new JSONArray(
-                            getRotationCurve(galaxy)
+                            getRotationCurve(
+                                    galaxy
+                            )
                     );
 
             all.append(
@@ -1089,9 +2443,12 @@ public class AndroidBridge {
             );
 
             if (i <
-                    galaxies.length() - 1) {
+                    galaxies.length() -
+                            1) {
 
-                all.append(separator);
+                all.append(
+                        separator
+                );
             }
         }
 
@@ -1145,7 +2502,9 @@ public class AndroidBridge {
                     )
             );
 
-            sb.append("\n");
+            sb.append(
+                    "\n"
+            );
         }
 
         if (includeHeader) {
@@ -1156,7 +2515,9 @@ public class AndroidBridge {
                     delimiter
             );
 
-            sb.append("\n");
+            sb.append(
+                    "\n"
+            );
         }
 
         for (int i = 0;
@@ -1165,12 +2526,16 @@ public class AndroidBridge {
 
             appendDataRow(
                     sb,
-                    rows.getJSONObject(i),
+                    rows.getJSONObject(
+                            i
+                    ),
                     columns,
                     delimiter
             );
 
-            sb.append("\n");
+            sb.append(
+                    "\n"
+            );
         }
 
         return sb.toString();
@@ -1187,16 +2552,23 @@ public class AndroidBridge {
              c++) {
 
             JSONObject col =
-                    columns.getJSONObject(c);
+                    columns.getJSONObject(
+                            c
+                    );
 
             if (c > 0) {
-                sb.append(delimiter);
+
+                sb.append(
+                        delimiter
+                );
             }
 
             sb.append(
                     col.optString(
                             "name",
-                            col.getString("source")
+                            col.getString(
+                                    "source"
+                            )
                     )
             );
         }
@@ -1214,17 +2586,26 @@ public class AndroidBridge {
              c++) {
 
             JSONObject col =
-                    columns.getJSONObject(c);
+                    columns.getJSONObject(
+                            c
+                    );
 
             if (c > 0) {
-                sb.append(delimiter);
+
+                sb.append(
+                        delimiter
+                );
             }
 
             String source =
-                    col.getString("source");
+                    col.getString(
+                            "source"
+                    );
 
             double value =
-                    row.getDouble(source);
+                    row.getDouble(
+                            source
+                    );
 
             double scale =
                     col.optDouble(
@@ -1264,7 +2645,9 @@ public class AndroidBridge {
             } else {
 
                 sb.append(
-                        Double.toString(value)
+                        Double.toString(
+                                value
+                        )
                 );
             }
         }
@@ -1274,11 +2657,17 @@ public class AndroidBridge {
             String delimiter
     ) {
 
-        if ("\\t".equals(delimiter)) {
+        if ("\\t".equals(
+                delimiter
+        )) {
+
             return "\t";
         }
 
-        if ("\\s".equals(delimiter)) {
+        if ("\\s".equals(
+                delimiter
+        )) {
+
             return " ";
         }
 
@@ -1290,7 +2679,10 @@ public class AndroidBridge {
             String delimiter
     ) {
 
-        if (!",".equals(delimiter)) {
+        if (!",".equals(
+                delimiter
+        )) {
+
             return value;
         }
 
@@ -1310,7 +2702,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // LEGACY EXPORT
+    // LEGACY QUICK EXPORT
     // ============================================================
 
     @JavascriptInterface
@@ -1325,7 +2717,7 @@ public class AndroidBridge {
     }
 
     // ============================================================
-    // MODERN DOWNLOADS STORAGE
+    // MODERN DOWNLOAD STORAGE
     // ============================================================
 
     private String saveExportToDownloads(
@@ -1334,7 +2726,9 @@ public class AndroidBridge {
             String mimeType
     ) throws Exception {
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.Q) {
+
             return saveWithMediaStore(
                     filename,
                     content,
@@ -1388,19 +2782,24 @@ public class AndroidBridge {
                 );
 
         if (uri == null) {
+
             throw new Exception(
                     "MediaStore could not create export file."
             );
         }
 
-        boolean success = false;
+        boolean success =
+                false;
 
         try (
                 OutputStream output =
-                        resolver.openOutputStream(uri)
+                        resolver.openOutputStream(
+                                uri
+                        )
         ) {
 
             if (output == null) {
+
                 throw new Exception(
                         "Could not open export output stream."
                 );
@@ -1414,7 +2813,8 @@ public class AndroidBridge {
 
             output.flush();
 
-            success = true;
+            success =
+                    true;
 
         } finally {
 
@@ -1445,7 +2845,8 @@ public class AndroidBridge {
             }
         }
 
-        return "Downloads/SPARC_Workbench/" + filename;
+        return "Downloads/SPARC_Workbench/" +
+                filename;
     }
 
     private String saveLegacyDownloads(
@@ -1481,7 +2882,9 @@ public class AndroidBridge {
 
         try (
                 FileOutputStream fos =
-                        new FileOutputStream(out)
+                        new FileOutputStream(
+                                out
+                        )
         ) {
 
             fos.write(
@@ -1499,19 +2902,27 @@ public class AndroidBridge {
     ) {
 
         if (extension == null) {
+
             return "text/plain";
         }
 
         String ext =
-                extension
-                        .trim()
-                        .toLowerCase(Locale.US);
+                extension.trim()
+                        .toLowerCase(
+                                Locale.US
+                        );
 
-        if ("csv".equals(ext)) {
+        if ("csv".equals(
+                ext
+        )) {
+
             return "text/csv";
         }
 
-        if ("tsv".equals(ext)) {
+        if ("tsv".equals(
+                ext
+        )) {
+
             return "text/tab-separated-values";
         }
 
@@ -1519,25 +2930,346 @@ public class AndroidBridge {
     }
 
     // ============================================================
+    // DATA UPDATE HELPERS
+    // ============================================================
+
+    private boolean updateIfRemoteChanged(
+            String urlString,
+            File target,
+            String lengthPreferenceKey,
+            String modifiedPreferenceKey
+    ) throws Exception {
+
+        HttpURLConnection connection =
+                (HttpURLConnection)
+                        new URL(
+                                urlString
+                        )
+                                .openConnection();
+
+        connection.setRequestMethod(
+                "HEAD"
+        );
+
+        connection.setConnectTimeout(
+                7000
+        );
+
+        connection.setReadTimeout(
+                7000
+        );
+
+        connection.setRequestProperty(
+                "User-Agent",
+                "SPARC-Workbench-Android/1.4"
+        );
+
+        connection.connect();
+
+        int code =
+                connection.getResponseCode();
+
+        if (code < 200 ||
+                code >= 400) {
+
+            connection.disconnect();
+
+            return false;
+        }
+
+        long remoteLength =
+                connection.getContentLengthLong();
+
+        long remoteModified =
+                connection.getLastModified();
+
+        connection.disconnect();
+
+        long storedLength =
+                prefs.getLong(
+                        lengthPreferenceKey,
+                        -1L
+                );
+
+        long storedModified =
+                prefs.getLong(
+                        modifiedPreferenceKey,
+                        -1L
+                );
+
+        boolean firstObservation =
+                storedLength < 0 &&
+                        storedModified < 0;
+
+        boolean changed =
+                false;
+
+        if (!firstObservation) {
+
+            if (remoteLength > 0 &&
+                    storedLength > 0 &&
+                    remoteLength !=
+                            storedLength) {
+
+                changed =
+                        true;
+            }
+
+            if (remoteModified > 0 &&
+                    storedModified > 0 &&
+                    remoteModified >
+                            storedModified) {
+
+                changed =
+                        true;
+            }
+        }
+
+        if (firstObservation) {
+
+            if (remoteLength > 0 &&
+                    target.length() > 0 &&
+                    remoteLength !=
+                            target.length()) {
+
+                changed =
+                        true;
+            }
+        }
+
+        if (changed) {
+
+            downloadFile(
+                    urlString,
+                    target
+            );
+        }
+
+        SharedPreferences.Editor editor =
+                prefs.edit();
+
+        if (remoteLength > 0) {
+
+            editor.putLong(
+                    lengthPreferenceKey,
+                    remoteLength
+            );
+        }
+
+        if (remoteModified > 0) {
+
+            editor.putLong(
+                    modifiedPreferenceKey,
+                    remoteModified
+            );
+        }
+
+        editor.apply();
+
+        return changed;
+    }
+
+    private void downloadIfNeeded(
+            String urlString,
+            File target
+    ) throws Exception {
+
+        if (validCachedFile(
+                target
+        )) {
+
+            return;
+        }
+
+        downloadFile(
+                urlString,
+                target
+        );
+    }
+
+    private void downloadFile(
+            String urlString,
+            File target
+    ) throws Exception {
+
+        File temp =
+                new File(
+                        target.getParentFile(),
+                        target.getName() +
+                                ".download"
+                );
+
+        HttpURLConnection connection =
+                (HttpURLConnection)
+                        new URL(
+                                urlString
+                        )
+                                .openConnection();
+
+        connection.setConnectTimeout(
+                15000
+        );
+
+        connection.setReadTimeout(
+                30000
+        );
+
+        connection.setRequestProperty(
+                "User-Agent",
+                "SPARC-Workbench-Android/1.4"
+        );
+
+        connection.connect();
+
+        int response =
+                connection.getResponseCode();
+
+        if (response !=
+                HttpURLConnection.HTTP_OK) {
+
+            connection.disconnect();
+
+            throw new Exception(
+                    "HTTP " +
+                            response
+            );
+        }
+
+        try (
+                java.io.InputStream input =
+                        connection.getInputStream();
+
+                FileOutputStream output =
+                        new FileOutputStream(
+                                temp
+                        )
+        ) {
+
+            byte[] buffer =
+                    new byte[8192];
+
+            int count;
+
+            while ((count =
+                    input.read(
+                            buffer
+                    )) != -1) {
+
+                output.write(
+                        buffer,
+                        0,
+                        count
+                );
+            }
+
+            output.flush();
+
+        } finally {
+
+            connection.disconnect();
+        }
+
+        if (temp.length() <= 1000) {
+
+            temp.delete();
+
+            throw new Exception(
+                    "Downloaded SPARC file is unexpectedly small."
+            );
+        }
+
+        if (target.exists() &&
+                !target.delete()) {
+
+            temp.delete();
+
+            throw new Exception(
+                    "Could not replace cached SPARC file."
+            );
+        }
+
+        if (!temp.renameTo(
+                target
+        )) {
+
+            copyFile(
+                    temp,
+                    target
+            );
+
+            temp.delete();
+        }
+    }
+
+    private void copyFile(
+            File source,
+            File target
+    ) throws Exception {
+
+        try (
+                FileInputStream input =
+                        new FileInputStream(
+                                source
+                        );
+
+                FileOutputStream output =
+                        new FileOutputStream(
+                                target
+                        )
+        ) {
+
+            byte[] buffer =
+                    new byte[8192];
+
+            int count;
+
+            while ((count =
+                    input.read(
+                            buffer
+                    )) != -1) {
+
+                output.write(
+                        buffer,
+                        0,
+                        count
+                );
+            }
+        }
+    }
+
+    private boolean validCachedFile(
+            File file
+    ) {
+
+        return file.exists() &&
+                file.length() >
+                        1000;
+    }
+
+    // ============================================================
     // GENERAL HELPERS
     // ============================================================
 
-    private File metadataFile() {
+    private File sparcDirectory() {
+
         return new File(
-                new File(
-                        activity.getFilesDir(),
-                        "sparc"
-                ),
+                activity.getFilesDir(),
+                "sparc"
+        );
+    }
+
+    private File metadataFile() {
+
+        return new File(
+                sparcDirectory(),
                 "SPARC_Lelli2016c.mrt"
         );
     }
 
     private File massModelFile() {
+
         return new File(
-                new File(
-                        activity.getFilesDir(),
-                        "sparc"
-                ),
+                sparcDirectory(),
                 "MassModels_Lelli2016c.mrt"
         );
     }
@@ -1548,7 +3280,9 @@ public class AndroidBridge {
 
         return new BufferedReader(
                 new InputStreamReader(
-                        new FileInputStream(file),
+                        new FileInputStream(
+                                file
+                        ),
                         StandardCharsets.UTF_8
                 )
         );
@@ -1567,22 +3301,36 @@ public class AndroidBridge {
         }
 
         JSONObject a =
-                curve.getJSONObject(start);
+                curve.getJSONObject(
+                        start
+                );
 
         JSONObject b =
-                curve.getJSONObject(end);
+                curve.getJSONObject(
+                        end
+                );
 
         double dr =
-                b.getDouble("radius_kpc") -
-                        a.getDouble("radius_kpc");
+                b.getDouble(
+                        "radius_kpc"
+                ) -
+                        a.getDouble(
+                                "radius_kpc"
+                        );
 
-        if (Math.abs(dr) < 1e-12) {
+        if (Math.abs(dr) <
+                1e-12) {
+
             return 0.0;
         }
 
         return (
-                b.getDouble("v_obs_kms") -
-                        a.getDouble("v_obs_kms")
+                b.getDouble(
+                        "v_obs_kms"
+                ) -
+                        a.getDouble(
+                                "v_obs_kms"
+                        )
         ) / dr;
     }
 
@@ -1597,20 +3345,33 @@ public class AndroidBridge {
         }
 
         List<Double> copy =
-                new ArrayList<>(values);
+                new ArrayList<>(
+                        values
+                );
 
-        Collections.sort(copy);
+        Collections.sort(
+                copy
+        );
 
-        int n = copy.size();
+        int n =
+                copy.size();
 
         if (n % 2 == 1) {
-            return copy.get(n / 2);
+
+            return copy.get(
+                    n / 2
+            );
         }
 
         return 0.5 *
                 (
-                        copy.get(n / 2 - 1) +
-                                copy.get(n / 2)
+                        copy.get(
+                                n / 2 -
+                                        1
+                        ) +
+                                copy.get(
+                                        n / 2
+                                )
                 );
     }
 
@@ -1619,10 +3380,15 @@ public class AndroidBridge {
     ) {
 
         if (value < 0) {
-            return -(value * value);
+
+            return -(
+                    value *
+                            value
+            );
         }
 
-        return value * value;
+        return value *
+                value;
     }
 
     private String sanitizeFilename(
@@ -1635,72 +3401,6 @@ public class AndroidBridge {
         );
     }
 
-    private void downloadIfNeeded(
-            String urlString,
-            File target
-    ) throws Exception {
-
-        if (target.exists() &&
-                target.length() > 1000) {
-
-            return;
-        }
-
-        HttpURLConnection connection =
-                (HttpURLConnection)
-                        new URL(urlString)
-                                .openConnection();
-
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(30000);
-
-        connection.setRequestProperty(
-                "User-Agent",
-                "SPARC-Workbench-Android/1.3.2"
-        );
-
-        connection.connect();
-
-        int response =
-                connection.getResponseCode();
-
-        if (response !=
-                HttpURLConnection.HTTP_OK) {
-
-            throw new Exception(
-                    "HTTP " + response
-            );
-        }
-
-        try (
-                java.io.InputStream input =
-                        connection.getInputStream();
-
-                FileOutputStream output =
-                        new FileOutputStream(target)
-        ) {
-
-            byte[] buffer =
-                    new byte[8192];
-
-            int count;
-
-            while ((count =
-                    input.read(buffer)) != -1) {
-
-                output.write(
-                        buffer,
-                        0,
-                        count
-                );
-            }
-
-        } finally {
-
-            connection.disconnect();
-        }
-    }
-
     private void sendToJs(
             String function,
             String json
@@ -1708,8 +3408,14 @@ public class AndroidBridge {
 
         String escaped =
                 json
-                        .replace("\\", "\\\\")
-                        .replace("'", "\\'");
+                        .replace(
+                                "\\",
+                                "\\\\"
+                        )
+                        .replace(
+                                "'",
+                                "\\'"
+                        );
 
         activity.runOnUiThread(
                 () ->
