@@ -242,18 +242,6 @@
       font-size: 12px;
     }
 
-    .good {
-      color: #86efac;
-    }
-
-    .warn {
-      color: #fcd34d;
-    }
-
-    .bad {
-      color: #fca5a5;
-    }
-
     .galaxy-list,
     .cohort-list {
       max-height: 330px;
@@ -333,33 +321,6 @@
       margin-bottom: 4px;
     }
 
-    .export-row {
-      display: grid;
-      grid-template-columns:
-        1.4fr
-        1.4fr
-        0.9fr
-        0.9fr
-        0.7fr
-        auto;
-      gap: 6px;
-      align-items: end;
-      margin-bottom: 8px;
-      padding: 8px;
-      background: #111827;
-      border-radius: 10px;
-    }
-
-    .export-row input,
-    .export-row select {
-      margin: 0;
-      padding: 8px;
-    }
-
-    .export-row button {
-      padding: 9px 7px;
-    }
-
     .data-state {
       display: inline-block;
       margin-top: 6px;
@@ -370,9 +331,111 @@
       color: #93c5fd;
     }
 
-    @media (max-width: 700px) {
-      .export-row {
+    /* ==========================================================
+       COMPACT EXPORT COLUMNS
+       ========================================================== */
+
+    .column-card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      margin-bottom: 9px;
+      overflow: hidden;
+    }
+
+    .column-summary {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+      cursor: pointer;
+    }
+
+    .column-summary:active {
+      background: #172033;
+    }
+
+    .column-main {
+      min-width: 0;
+    }
+
+    .column-title {
+      font-size: 15px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .column-subtitle {
+      margin-top: 3px;
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .column-chevron {
+      font-size: 18px;
+      color: #93c5fd;
+      transition: transform 0.18s ease;
+    }
+
+    .column-card.expanded .column-chevron {
+      transform: rotate(180deg);
+    }
+
+    .column-editor {
+      padding: 0 12px 12px;
+      border-top: 1px solid #263244;
+    }
+
+    .column-card:not(.expanded) .column-editor {
+      display: none;
+    }
+
+    .column-editor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .column-editor-grid .full {
+      grid-column: 1 / -1;
+    }
+
+    .column-editor input,
+    .column-editor select {
+      margin-bottom: 6px;
+    }
+
+    .column-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      margin-top: 6px;
+    }
+
+    .column-toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .export-help {
+      color: #94a3b8;
+      font-size: 12px;
+      margin: -2px 0 10px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 540px) {
+      .two-col,
+      .column-editor-grid {
         grid-template-columns: 1fr;
+      }
+
+      .column-editor-grid .full {
+        grid-column: auto;
       }
     }
   </style>
@@ -620,39 +683,27 @@
 
         <div class="cohort-buttons">
 
-          <button
-            onclick="loadCohort('quality_1')">
-
+          <button onclick="loadCohort('quality_1')">
             Quality 1
           </button>
 
-          <button
-            onclick="loadCohort('btfr_ready')">
-
+          <button onclick="loadCohort('btfr_ready')">
             BTFR Ready
           </button>
 
-          <button
-            onclick="loadCohort('bulgeless')">
-
+          <button onclick="loadCohort('bulgeless')">
             Bulgeless
           </button>
 
-          <button
-            onclick="loadCohort('extended_rotation_curve')">
-
+          <button onclick="loadCohort('extended_rotation_curve')">
             Extended Curves
           </button>
 
-          <button
-            onclick="loadCohort('inclination_safe')">
-
+          <button onclick="loadCohort('inclination_safe')">
             Inclination Safe
           </button>
 
-          <button
-            onclick="loadCohort('uig_benchmark_v1')">
-
+          <button onclick="loadCohort('uig_benchmark_v1')">
             UIG Benchmark v1
           </button>
 
@@ -788,7 +839,10 @@
             <input
               id="extensionInput"
               value="csv"
-              oninput="saveSession()"
+              oninput="
+                markBuilderCustom();
+                saveSession();
+              "
             />
 
           </div>
@@ -806,7 +860,10 @@
 
             <select
               id="delimiterInput"
-              onchange="saveSession()">
+              onchange="
+                markBuilderCustom();
+                saveSession();
+              ">
 
               <option value=",">
                 Comma
@@ -841,7 +898,10 @@
 
             <select
               id="headerInput"
-              onchange="saveSession()">
+              onchange="
+                markBuilderCustom();
+                saveSession();
+              ">
 
               <option value="true">
                 Include Header
@@ -867,7 +927,10 @@
           <input
             id="galaxyHeaderInput"
             placeholder="Example: Galaxy name: {galaxy}"
-            oninput="saveSession()"
+            oninput="
+              markBuilderCustom();
+              saveSession();
+            "
           />
 
         </div>
@@ -882,7 +945,10 @@
           <textarea
             id="preambleInput"
             placeholder="Optional text placed at the beginning of cohort exports"
-            oninput="saveSession()">
+            oninput="
+              markBuilderCustom();
+              saveSession();
+            ">
           </textarea>
 
         </div>
@@ -892,19 +958,36 @@
           Columns
         </h3>
 
+        <div class="export-help">
+          Tap a column to expand its source, name,
+          scale, offset, and decimal settings.
+        </div>
+
         <div id="columnBuilder">
         </div>
 
-        <button
-          class="secondary"
-          onclick="
-            addColumnRow();
-            markBuilderCustom();
-            saveSession();
-          ">
 
-          Add Column
-        </button>
+        <div class="column-toolbar">
+
+          <button
+            class="secondary"
+            onclick="
+              addColumnRow();
+              markBuilderCustom();
+              saveSession();
+            ">
+
+            Add Column
+          </button>
+
+          <button
+            class="secondary"
+            onclick="collapseAllColumns()">
+
+            Collapse All
+          </button>
+
+        </div>
 
 
         <div class="button-row">
@@ -1170,7 +1253,6 @@ function(jsonText) {
       "SPARC data loaded from device cache.";
   }
 
-
   if (
     result.update_check_failed
   ) {
@@ -1179,14 +1261,12 @@ function(jsonText) {
       "\nRemote update check unavailable; cached data is being used.";
   }
 
-
   document
     .getElementById(
       "loadStatus"
     )
     .textContent =
       stateMessage;
-
 
   document
     .getElementById(
@@ -1199,15 +1279,12 @@ function(jsonText) {
           ? "Data cached"
           : "Cached data ready";
 
-
   restoreSession(
     result.session || {}
   );
 
-
   bootstrapped =
     true;
-
 
   setTimeout(
     () => {
@@ -1282,7 +1359,6 @@ function(jsonText) {
     return;
   }
 
-
   if (!result.ok) {
 
     document
@@ -1296,7 +1372,6 @@ function(jsonText) {
     return;
   }
 
-
   document
     .getElementById(
       "loadStatus"
@@ -1304,14 +1379,12 @@ function(jsonText) {
     .textContent =
       "SPARC data is ready.";
 
-
   document
     .getElementById(
       "dataStateBadge"
     )
     .textContent =
       "Data ready";
-
 
   loadCatalog();
 };
@@ -1330,7 +1403,6 @@ function saveSession() {
 
     return;
   }
-
 
   try {
 
@@ -1377,7 +1449,6 @@ function saveSession() {
         buildCustomStyle()
     };
 
-
     AndroidBridge.saveSessionState(
       JSON.stringify(
         state
@@ -1385,9 +1456,6 @@ function saveSession() {
     );
 
   } catch (e) {
-
-    // Session persistence should never
-    // interrupt scientific work.
   }
 }
 
@@ -1396,7 +1464,6 @@ function restoreSession(state) {
 
   restoringSession =
     true;
-
 
   try {
 
@@ -1417,7 +1484,6 @@ function restoreSession(state) {
             state.search_text;
       }
 
-
       if (
         state.selected_cohort
       ) {
@@ -1425,7 +1491,6 @@ function restoreSession(state) {
         selectedCohort =
           state.selected_cohort;
       }
-
 
       if (
         state.export_target_type
@@ -1439,7 +1504,6 @@ function restoreSession(state) {
             state.export_target_type;
       }
 
-
       if (
         state.preset_style
       ) {
@@ -1451,7 +1515,6 @@ function restoreSession(state) {
           .value =
             state.preset_style;
       }
-
 
       if (
         state.preset_style ===
@@ -1468,9 +1531,7 @@ function restoreSession(state) {
         applyPresetStyle();
       }
 
-
       refreshExportTarget();
-
 
       if (
         state.export_target
@@ -1482,14 +1543,12 @@ function restoreSession(state) {
         );
       }
 
-
       if (
         state.search_text
       ) {
 
         filterCatalog();
       }
-
 
       if (
         state.selected_galaxy &&
@@ -1504,7 +1563,6 @@ function restoreSession(state) {
         );
       }
 
-
       const desiredTab =
         [
           "explore",
@@ -1516,7 +1574,6 @@ function restoreSession(state) {
         )
           ? state.active_tab
           : "explore";
-
 
       showTab(
         desiredTab,
@@ -1543,7 +1600,6 @@ function restoreSession(state) {
     );
   }
 
-
   restoringSession =
     false;
 }
@@ -1559,7 +1615,6 @@ function setSelectValueIfPresent(
       elementId
     );
 
-
   const exists =
     Array.from(
       select.options
@@ -1569,7 +1624,6 @@ function setSelectValueIfPresent(
         option.value ===
         value
     );
-
 
   if (exists) {
 
@@ -1599,7 +1653,6 @@ function showTab(
         )
     );
 
-
   document
     .getElementById(
       id
@@ -1609,10 +1662,8 @@ function showTab(
       "hidden"
     );
 
-
   activeTab =
     id;
-
 
   document
     .querySelectorAll(
@@ -1624,7 +1675,6 @@ function showTab(
           "active"
         )
     );
-
 
   const map = {
 
@@ -1641,7 +1691,6 @@ function showTab(
       "tabButtonHealth"
   };
 
-
   if (map[id]) {
 
     document
@@ -1654,12 +1703,10 @@ function showTab(
       );
   }
 
-
   if (id === "export") {
 
     refreshExportTarget();
   }
-
 
   if (persist) {
 
@@ -1687,7 +1734,6 @@ function loadCatalog() {
     catalog = [];
   }
 
-
   document
     .getElementById(
       "catalogInfo"
@@ -1696,11 +1742,9 @@ function loadCatalog() {
       catalog.length +
       " catalog entries loaded.";
 
-
   const pass =
     catalog.length ===
     175;
-
 
   document
     .getElementById(
@@ -1717,11 +1761,9 @@ function loadCatalog() {
           : "CHECK"
       );
 
-
   renderCatalog(
     catalog
   );
-
 
   refreshExportTarget();
 }
@@ -1737,7 +1779,6 @@ function filterCatalog() {
       .value
       .trim()
       .toLowerCase();
-
 
   if (!q) {
 
@@ -1757,7 +1798,6 @@ function filterCatalog() {
     );
   }
 
-
   saveSession();
 }
 
@@ -1769,10 +1809,8 @@ function renderCatalog(items) {
       "galaxyList"
     );
 
-
   list.innerHTML =
     "";
-
 
   items.forEach(
     name => {
@@ -1782,21 +1820,17 @@ function renderCatalog(items) {
           "div"
         );
 
-
       row.className =
         "galaxy-row";
 
-
       row.textContent =
         name;
-
 
       row.onclick =
         () =>
           selectGalaxy(
             name
           );
-
 
       list.appendChild(
         row
@@ -1818,7 +1852,6 @@ function selectGalaxy(
   selectedGalaxy =
     name;
 
-
   try {
 
     selectedCurve =
@@ -1834,7 +1867,6 @@ function selectGalaxy(
     selectedCurve =
       [];
   }
-
 
   try {
 
@@ -1852,7 +1884,6 @@ function selectGalaxy(
       {};
   }
 
-
   try {
 
     selectedDiag =
@@ -1869,14 +1900,12 @@ function selectGalaxy(
       {};
   }
 
-
   document
     .getElementById(
       "galaxyTitle"
     )
     .textContent =
       name;
-
 
   document
     .getElementById(
@@ -1887,13 +1916,11 @@ function selectGalaxy(
       "hidden"
     );
 
-
   renderMetrics();
   drawCurve();
   renderDiagnostics();
 
   refreshExportTarget();
-
 
   if (persist) {
 
@@ -1909,10 +1936,8 @@ function renderMetrics() {
       "metricGrid"
     );
 
-
   grid.innerHTML =
     "";
-
 
   if (!selectedCurve.length) {
 
@@ -1924,17 +1949,14 @@ function renderMetrics() {
     return;
   }
 
-
   const first =
     selectedCurve[0];
-
 
   const last =
     selectedCurve[
       selectedCurve.length -
       1
     ];
-
 
   const values = [
 
@@ -2004,7 +2026,6 @@ function renderMetrics() {
     ]
   ];
 
-
   values.forEach(
     ([label, value]) => {
 
@@ -2013,10 +2034,8 @@ function renderMetrics() {
           "div"
         );
 
-
       box.className =
         "metric";
-
 
       box.innerHTML =
         '<div class="label">' +
@@ -2026,7 +2045,6 @@ function renderMetrics() {
         '<div class="value">' +
         value +
         '</div>';
-
 
       grid.appendChild(
         box
@@ -2043,10 +2061,8 @@ function renderDiagnostics() {
       "diagGrid"
     );
 
-
   grid.innerHTML =
     "";
-
 
   if (
     !selectedDiag ||
@@ -2060,7 +2076,6 @@ function renderDiagnostics() {
 
     return;
   }
-
 
   const values = [
 
@@ -2155,7 +2170,6 @@ function renderDiagnostics() {
     ]
   ];
 
-
   values.forEach(
     ([label, value]) => {
 
@@ -2164,10 +2178,8 @@ function renderDiagnostics() {
           "div"
         );
 
-
       box.className =
         "metric";
-
 
       box.innerHTML =
         '<div class="label">' +
@@ -2177,7 +2189,6 @@ function renderDiagnostics() {
         '<div class="value">' +
         value +
         '</div>';
-
 
       grid.appendChild(
         box
@@ -2198,15 +2209,12 @@ function drawCurve() {
       "curveChart"
     );
 
-
   svg.innerHTML =
     "";
-
 
   if (!selectedCurve.length) {
     return;
   }
-
 
   const width =
     600;
@@ -2226,13 +2234,11 @@ function drawCurve() {
   const bottom =
     35;
 
-
   let maxR =
     0;
 
   let maxV =
     0;
-
 
   selectedCurve.forEach(
     r => {
@@ -2245,7 +2251,6 @@ function drawCurve() {
           )
         );
 
-
       maxV =
         Math.max(
           maxV,
@@ -2256,39 +2261,32 @@ function drawCurve() {
     }
   );
 
-
   if (maxR <= 0) {
     maxR = 1;
   }
 
-
   if (maxV <= 0) {
     maxV = 1;
   }
-
 
   const plotW =
     width -
     left -
     right;
 
-
   const plotH =
     height -
     top -
     bottom;
 
-
   const NS =
     "http://www.w3.org/2000/svg";
-
 
   const axisX =
     document.createElementNS(
       NS,
       "line"
     );
-
 
   axisX.setAttribute(
     "x1",
@@ -2318,18 +2316,15 @@ function drawCurve() {
     "#6b7280"
   );
 
-
   svg.appendChild(
     axisX
   );
-
 
   const axisY =
     document.createElementNS(
       NS,
       "line"
     );
-
 
   axisY.setAttribute(
     "x1",
@@ -2357,15 +2352,12 @@ function drawCurve() {
     "#6b7280"
   );
 
-
   svg.appendChild(
     axisY
   );
 
-
   let points =
     "";
-
 
   selectedCurve.forEach(
     r => {
@@ -2380,7 +2372,6 @@ function drawCurve() {
         ) *
         plotW;
 
-
       const y =
         top +
         plotH -
@@ -2392,7 +2383,6 @@ function drawCurve() {
         ) *
         plotH;
 
-
       points +=
         x +
         "," +
@@ -2401,13 +2391,11 @@ function drawCurve() {
     }
   );
 
-
   const poly =
     document.createElementNS(
       NS,
       "polyline"
     );
-
 
   poly.setAttribute(
     "points",
@@ -2429,11 +2417,9 @@ function drawCurve() {
     "3"
   );
 
-
   svg.appendChild(
     poly
   );
-
 
   selectedCurve.forEach(
     r => {
@@ -2448,7 +2434,6 @@ function drawCurve() {
         ) *
         plotW;
 
-
       const y =
         top +
         plotH -
@@ -2460,13 +2445,11 @@ function drawCurve() {
         ) *
         plotH;
 
-
       const c =
         document.createElementNS(
           NS,
           "circle"
         );
-
 
       c.setAttribute(
         "cx",
@@ -2488,7 +2471,6 @@ function drawCurve() {
         "#93c5fd"
       );
 
-
       svg.appendChild(
         c
       );
@@ -2509,7 +2491,6 @@ function loadCohort(
   let items =
     [];
 
-
   try {
 
     items =
@@ -2526,10 +2507,8 @@ function loadCohort(
       [];
   }
 
-
   selectedCohort =
     name;
-
 
   document
     .getElementById(
@@ -2541,16 +2520,13 @@ function loadCohort(
       items.length +
       " galaxies";
 
-
   const list =
     document.getElementById(
       "cohortList"
     );
 
-
   list.innerHTML =
     "";
-
 
   items.forEach(
     galaxy => {
@@ -2560,14 +2536,11 @@ function loadCohort(
           "div"
         );
 
-
       row.className =
         "galaxy-row";
 
-
       row.textContent =
         galaxy;
-
 
       row.onclick =
         () => {
@@ -2579,20 +2552,16 @@ function loadCohort(
             .value =
               galaxy;
 
-
           filterCatalog();
-
 
           selectGalaxy(
             galaxy
           );
 
-
           showTab(
             "explore"
           );
         };
-
 
       list.appendChild(
         row
@@ -2600,9 +2569,7 @@ function loadCohort(
     }
   );
 
-
   refreshExportTarget();
-
 
   if (persist) {
 
@@ -2622,7 +2589,6 @@ function exportSelectedGalaxyQuick() {
       "quickExportStatus"
     );
 
-
   if (!selectedGalaxy) {
 
     el.textContent =
@@ -2631,13 +2597,11 @@ function exportSelectedGalaxyQuick() {
     return;
   }
 
-
   const result =
     AndroidBridge
       .exportGalaxyCsv(
         selectedGalaxy
       );
-
 
   el.textContent =
     result.startsWith(
@@ -2662,21 +2626,17 @@ function refreshExportTarget() {
       )
       .value;
 
-
   const target =
     document
       .getElementById(
         "exportTarget"
       );
 
-
   const previousValue =
     target.value;
 
-
   target.innerHTML =
     "";
-
 
   if (type === "galaxy") {
 
@@ -2688,13 +2648,11 @@ function refreshExportTarget() {
             "option"
           );
 
-
         option.value =
           g;
 
         option.textContent =
           g;
-
 
         if (
           g ===
@@ -2704,7 +2662,6 @@ function refreshExportTarget() {
           option.selected =
             true;
         }
-
 
         target.appendChild(
           option
@@ -2722,13 +2679,11 @@ function refreshExportTarget() {
             "option"
           );
 
-
         option.value =
           c;
 
         option.textContent =
           c;
-
 
         if (
           c ===
@@ -2739,14 +2694,12 @@ function refreshExportTarget() {
             true;
         }
 
-
         target.appendChild(
           option
         );
       }
     );
   }
-
 
   if (
     previousValue &&
@@ -2767,7 +2720,7 @@ function refreshExportTarget() {
 
 
 /* ==============================================================
-   EXPORT COLUMN BUILDER
+   COMPACT EXPORT COLUMN BUILDER
    ============================================================== */
 
 function addColumnRow(
@@ -2775,7 +2728,8 @@ function addColumnRow(
   name = "radius_kpc",
   scale = 1,
   offset = 0,
-  decimals = -1
+  decimals = -1,
+  expanded = false
 ) {
 
   const holder =
@@ -2783,22 +2737,103 @@ function addColumnRow(
       "columnBuilder"
     );
 
-
-  const row =
+  const card =
     document.createElement(
       "div"
     );
 
+  card.className =
+    "column-card" +
+    (
+      expanded
+        ? " expanded"
+        : ""
+    );
 
-  row.className =
-    "export-row";
+  const summary =
+    document.createElement(
+      "div"
+    );
 
+  summary.className =
+    "column-summary";
+
+  const main =
+    document.createElement(
+      "div"
+    );
+
+  main.className =
+    "column-main";
+
+  const title =
+    document.createElement(
+      "div"
+    );
+
+  title.className =
+    "column-title";
+
+  const subtitle =
+    document.createElement(
+      "div"
+    );
+
+  subtitle.className =
+    "column-subtitle";
+
+  main.appendChild(
+    title
+  );
+
+  main.appendChild(
+    subtitle
+  );
+
+  const chevron =
+    document.createElement(
+      "div"
+    );
+
+  chevron.className =
+    "column-chevron";
+
+  chevron.textContent =
+    "⌄";
+
+  summary.appendChild(
+    main
+  );
+
+  summary.appendChild(
+    chevron
+  );
+
+  const editor =
+    document.createElement(
+      "div"
+    );
+
+  editor.className =
+    "column-editor";
+
+  const grid =
+    document.createElement(
+      "div"
+    );
+
+  grid.className =
+    "column-editor-grid";
+
+  const sourceWrap =
+    makeFieldWrap(
+      "Source Field"
+    );
 
   const sourceSelect =
     document.createElement(
       "select"
     );
-
 
   exportFields.forEach(
     field => {
@@ -2808,13 +2843,11 @@ function addColumnRow(
           "option"
         );
 
-
       option.value =
         field;
 
       option.textContent =
         field;
-
 
       if (
         field ===
@@ -2825,27 +2858,25 @@ function addColumnRow(
           true;
       }
 
-
       sourceSelect.appendChild(
         option
       );
     }
   );
 
+  sourceWrap.appendChild(
+    sourceSelect
+  );
 
-  sourceSelect.onchange =
-    () => {
-
-      markBuilderCustom();
-      saveSession();
-    };
-
+  const nameWrap =
+    makeFieldWrap(
+      "Output Name"
+    );
 
   const nameInput =
     document.createElement(
       "input"
     );
-
 
   nameInput.value =
     name;
@@ -2853,19 +2884,19 @@ function addColumnRow(
   nameInput.placeholder =
     "Column name";
 
-  nameInput.oninput =
-    () => {
+  nameWrap.appendChild(
+    nameInput
+  );
 
-      markBuilderCustom();
-      saveSession();
-    };
-
+  const scaleWrap =
+    makeFieldWrap(
+      "Scale"
+    );
 
   const scaleInput =
     document.createElement(
       "input"
     );
-
 
   scaleInput.type =
     "number";
@@ -2876,19 +2907,19 @@ function addColumnRow(
   scaleInput.value =
     scale;
 
-  scaleInput.oninput =
-    () => {
+  scaleWrap.appendChild(
+    scaleInput
+  );
 
-      markBuilderCustom();
-      saveSession();
-    };
-
+  const offsetWrap =
+    makeFieldWrap(
+      "Offset"
+    );
 
   const offsetInput =
     document.createElement(
       "input"
     );
-
 
   offsetInput.type =
     "number";
@@ -2899,19 +2930,23 @@ function addColumnRow(
   offsetInput.value =
     offset;
 
-  offsetInput.oninput =
-    () => {
+  offsetWrap.appendChild(
+    offsetInput
+  );
 
-      markBuilderCustom();
-      saveSession();
-    };
+  const decimalsWrap =
+    makeFieldWrap(
+      "Decimals (-1 = automatic)"
+    );
 
+  decimalsWrap.classList.add(
+    "full"
+  );
 
   const decimalsInput =
     document.createElement(
       "input"
     );
-
 
   decimalsInput.type =
     "number";
@@ -2922,66 +2957,234 @@ function addColumnRow(
   decimalsInput.min =
     "-1";
 
-  decimalsInput.oninput =
-    () => {
+  decimalsWrap.appendChild(
+    decimalsInput
+  );
 
-      markBuilderCustom();
-      saveSession();
-    };
+  grid.appendChild(
+    sourceWrap
+  );
 
+  grid.appendChild(
+    nameWrap
+  );
+
+  grid.appendChild(
+    scaleWrap
+  );
+
+  grid.appendChild(
+    offsetWrap
+  );
+
+  grid.appendChild(
+    decimalsWrap
+  );
+
+  const actions =
+    document.createElement(
+      "div"
+    );
+
+  actions.className =
+    "column-actions";
 
   const remove =
     document.createElement(
       "button"
     );
 
-
   remove.className =
     "danger";
 
   remove.textContent =
-    "Remove";
+    "Remove Column";
 
+  actions.appendChild(
+    remove
+  );
+
+  editor.appendChild(
+    grid
+  );
+
+  editor.appendChild(
+    actions
+  );
+
+  card.appendChild(
+    summary
+  );
+
+  card.appendChild(
+    editor
+  );
+
+  card._sourceSelect =
+    sourceSelect;
+
+  card._nameInput =
+    nameInput;
+
+  card._scaleInput =
+    scaleInput;
+
+  card._offsetInput =
+    offsetInput;
+
+  card._decimalsInput =
+    decimalsInput;
+
+  function refreshSummary() {
+
+    const currentSource =
+      sourceSelect.value;
+
+    const currentName =
+      nameInput.value ||
+      currentSource;
+
+    const currentScale =
+      Number(
+        scaleInput.value ||
+        1
+      );
+
+    const currentOffset =
+      Number(
+        offsetInput.value ||
+        0
+      );
+
+    const currentDecimals =
+      Number(
+        decimalsInput.value ||
+        -1
+      );
+
+    title.textContent =
+      currentName;
+
+    let detail =
+      currentSource;
+
+    if (
+      currentScale !== 1
+    ) {
+
+      detail +=
+        " • scale " +
+        currentScale;
+    }
+
+    if (
+      currentOffset !== 0
+    ) {
+
+      detail +=
+        " • offset " +
+        currentOffset;
+    }
+
+    detail +=
+      currentDecimals >= 0
+        ? " • " +
+          currentDecimals +
+          " decimals"
+        : " • auto decimals";
+
+    subtitle.textContent =
+      detail;
+  }
+
+  function changed() {
+
+    refreshSummary();
+    markBuilderCustom();
+    saveSession();
+  }
+
+  sourceSelect.onchange =
+    changed;
+
+  nameInput.oninput =
+    changed;
+
+  scaleInput.oninput =
+    changed;
+
+  offsetInput.oninput =
+    changed;
+
+  decimalsInput.oninput =
+    changed;
+
+  summary.onclick =
+    () => {
+
+      card.classList.toggle(
+        "expanded"
+      );
+    };
 
   remove.onclick =
     () => {
 
-      row.remove();
+      card.remove();
 
       markBuilderCustom();
 
       saveSession();
     };
 
-
-  row.appendChild(
-    sourceSelect
-  );
-
-  row.appendChild(
-    nameInput
-  );
-
-  row.appendChild(
-    scaleInput
-  );
-
-  row.appendChild(
-    offsetInput
-  );
-
-  row.appendChild(
-    decimalsInput
-  );
-
-  row.appendChild(
-    remove
-  );
-
+  refreshSummary();
 
   holder.appendChild(
-    row
+    card
   );
+}
+
+
+function makeFieldWrap(
+  labelText
+) {
+
+  const wrap =
+    document.createElement(
+      "div"
+    );
+
+  const label =
+    document.createElement(
+      "div"
+    );
+
+  label.className =
+    "section-label";
+
+  label.textContent =
+    labelText;
+
+  wrap.appendChild(
+    label
+  );
+
+  return wrap;
+}
+
+
+function collapseAllColumns() {
+
+  document
+    .querySelectorAll(
+      "#columnBuilder .column-card"
+    )
+    .forEach(
+      card =>
+        card.classList.remove(
+          "expanded"
+        )
+    );
 }
 
 
@@ -2990,7 +3193,6 @@ function markBuilderCustom() {
   if (restoringSession) {
     return;
   }
-
 
   document
     .getElementById(
@@ -3014,7 +3216,6 @@ function resetCustomStyle() {
     .value =
       "canonical_csv";
 
-
   applyPresetStyle();
 
   saveSession();
@@ -3030,12 +3231,10 @@ function applyPresetStyle() {
       )
       .value;
 
-
   const holder =
     document.getElementById(
       "columnBuilder"
     );
-
 
   if (
     preset ===
@@ -3045,10 +3244,8 @@ function applyPresetStyle() {
     return;
   }
 
-
   holder.innerHTML =
     "";
-
 
   if (
     preset ===
@@ -3063,18 +3260,15 @@ function applyPresetStyle() {
       ""
     );
 
-
     addColumnRow(
       "radius_kpc",
       "radius_kpc"
     );
 
-
     addColumnRow(
       "v_obs_kms",
       "v_obs_kms"
     );
-
 
     addColumnRow(
       "v_err_kms",
@@ -3094,48 +3288,40 @@ function applyPresetStyle() {
       ""
     );
 
-
     addColumnRow(
       "radius_kpc",
       "radius_kpc"
     );
-
 
     addColumnRow(
       "v_obs_kms",
       "v_obs"
     );
 
-
     addColumnRow(
       "v_err_kms",
       "v_err"
     );
-
 
     addColumnRow(
       "v_gas_kms",
       "v_gas"
     );
 
-
     addColumnRow(
       "v_disk_kms",
       "v_disk"
     );
-
 
     addColumnRow(
       "v_bulge_kms",
       "v_bulge"
     );
 
-
     addColumnRow(
       "sb_disk",
       "sb_disk"
     );
-
 
     addColumnRow(
       "sb_bulge",
@@ -3155,36 +3341,30 @@ function applyPresetStyle() {
       ""
     );
 
-
     addColumnRow(
       "radius_kpc",
       "r"
     );
-
 
     addColumnRow(
       "v_obs_kms",
       "vobs"
     );
 
-
     addColumnRow(
       "v_err_kms",
       "verr"
     );
-
 
     addColumnRow(
       "v_gas_kms",
       "vgas"
     );
 
-
     addColumnRow(
       "v_disk_kms",
       "vdisk"
     );
-
 
     addColumnRow(
       "v_bulge_kms",
@@ -3201,7 +3381,6 @@ function applyPresetStyle() {
       ""
     );
 
-
     exportFields.forEach(
       field =>
         addColumnRow(
@@ -3210,6 +3389,8 @@ function applyPresetStyle() {
         )
     );
   }
+
+  collapseAllColumns();
 }
 
 
@@ -3228,14 +3409,12 @@ function setExportControls(
     .value =
       delimiter;
 
-
   document
     .getElementById(
       "extensionInput"
     )
     .value =
       extension;
-
 
   document
     .getElementById(
@@ -3246,14 +3425,12 @@ function setExportControls(
         header
       );
 
-
   document
     .getElementById(
       "galaxyHeaderInput"
     )
     .value =
       galaxyHeader;
-
 
   document
     .getElementById(
@@ -3320,54 +3497,48 @@ function buildCustomStyle() {
       []
   };
 
-
   document
     .querySelectorAll(
-      "#columnBuilder .export-row"
+      "#columnBuilder .column-card"
     )
     .forEach(
-      row => {
-
-        const fields =
-          row.children;
-
+      card => {
 
         style.columns.push({
 
           source:
-            fields[0]
+            card._sourceSelect
               .value,
 
           name:
-            fields[1]
+            card._nameInput
               .value ||
-            fields[0]
+            card._sourceSelect
               .value,
 
           scale:
             Number(
-              fields[2]
+              card._scaleInput
                 .value ||
               1
             ),
 
           offset:
             Number(
-              fields[3]
+              card._offsetInput
                 .value ||
               0
             ),
 
           decimals:
             Number(
-              fields[4]
+              card._decimalsInput
                 .value ||
               -1
             )
         });
       }
     );
-
 
   return style;
 }
@@ -3386,14 +3557,12 @@ function applyStyleObject(
     return;
   }
 
-
   document
     .getElementById(
       "columnBuilder"
     )
     .innerHTML =
       "";
-
 
   if (
     style.delimiter != null
@@ -3407,7 +3576,6 @@ function applyStyleObject(
         style.delimiter;
   }
 
-
   if (
     style.extension != null
   ) {
@@ -3419,7 +3587,6 @@ function applyStyleObject(
       .value =
         style.extension;
   }
-
 
   if (
     style.include_header != null
@@ -3435,7 +3602,6 @@ function applyStyleObject(
         );
   }
 
-
   document
     .getElementById(
       "galaxyHeaderInput"
@@ -3444,7 +3610,6 @@ function applyStyleObject(
       style.galaxy_header_template ||
       "";
 
-
   document
     .getElementById(
       "preambleInput"
@@ -3452,7 +3617,6 @@ function applyStyleObject(
     .value =
       style.preamble ||
       "";
-
 
   if (
     Array.isArray(
@@ -3468,12 +3632,12 @@ function applyStyleObject(
           col.name,
           col.scale,
           col.offset,
-          col.decimals
+          col.decimals,
+          false
         );
       }
     );
   }
-
 
   document
     .getElementById(
@@ -3481,6 +3645,8 @@ function applyStyleObject(
     )
     .value =
       "custom";
+
+  collapseAllColumns();
 }
 
 
@@ -3497,14 +3663,12 @@ function runExport() {
       )
       .value;
 
-
   const target =
     document
       .getElementById(
         "exportTarget"
       )
       .value;
-
 
   const preset =
     document
@@ -3513,12 +3677,10 @@ function runExport() {
       )
       .value;
 
-
   const status =
     document.getElementById(
       "exportStatus"
     );
-
 
   if (!target) {
 
@@ -3528,13 +3690,10 @@ function runExport() {
     return;
   }
 
-
   status.textContent =
     "Preparing export...";
 
-
   let result;
-
 
   if (
     preset !==
@@ -3568,7 +3727,6 @@ function runExport() {
     const style =
       buildCustomStyle();
 
-
     if (
       !style.columns.length
     ) {
@@ -3579,12 +3737,10 @@ function runExport() {
       return;
     }
 
-
     const json =
       JSON.stringify(
         style
       );
-
 
     if (
       type ===
@@ -3609,7 +3765,6 @@ function runExport() {
     }
   }
 
-
   status.textContent =
     result.startsWith(
       "ERROR:"
@@ -3617,7 +3772,6 @@ function runExport() {
       ? result
       : "Saved to:\n" +
         result;
-
 
   saveSession();
 }
@@ -3636,7 +3790,6 @@ function fmt(
     Number(
       value
     );
-
 
   return Number.isFinite(
     x
