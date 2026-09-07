@@ -64,6 +64,10 @@
       background: #4b5563;
     }
 
+    button.danger {
+      background: #7f1d1d;
+    }
+
     main {
       padding: 14px;
     }
@@ -86,7 +90,9 @@
       white-space: pre-wrap;
     }
 
-    input, select {
+    input,
+    select,
+    textarea {
       width: 100%;
       padding: 11px;
       margin: 6px 0 10px;
@@ -94,6 +100,11 @@
       border: 1px solid #4b5563;
       background: #111827;
       color: white;
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
     }
 
     .galaxy-list,
@@ -158,6 +169,52 @@
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;
       margin-bottom: 12px;
+    }
+
+    .export-row {
+      display: grid;
+      grid-template-columns: 1.4fr 1.4fr 0.9fr 0.9fr 0.7fr;
+      gap: 6px;
+      align-items: end;
+      margin-bottom: 8px;
+      padding: 8px;
+      background: #111827;
+      border-radius: 10px;
+    }
+
+    .export-row input,
+    .export-row select {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .export-row button {
+      padding: 9px 6px;
+    }
+
+    .section-label {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 700px) {
+      .export-row {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -240,12 +297,12 @@
     <div style="margin-top:14px">
       <button
         class="secondary"
-        onclick="exportSelectedGalaxy()">
-        Export CSV
+        onclick="exportSelectedGalaxyQuick()">
+        Quick CSV Export
       </button>
     </div>
 
-    <div id="exportStatus" class="status"></div>
+    <div id="quickExportStatus" class="status"></div>
   </div>
 
 </section>
@@ -297,16 +354,124 @@
 <section id="export" class="hidden">
 
   <div class="card">
-    <h2>Export</h2>
+    <h2>Export Builder</h2>
 
     <p>
-      v1.2 supports per-galaxy native CSV export.
-      The full customizable export-profile builder is next.
+      Choose a built-in format or create a custom schema
+      for your own model.
     </p>
 
-    <div id="exportGalaxyLabel" class="status">
-      Select a galaxy in Explore first.
+    <div class="two-col">
+
+      <div>
+        <div class="section-label">Target</div>
+
+        <select id="exportTargetType" onchange="refreshExportTarget()">
+          <option value="galaxy">Single Galaxy</option>
+          <option value="cohort">Scientific Cohort</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="section-label">Target Item</div>
+
+        <select id="exportTarget"></select>
+      </div>
+
     </div>
+
+    <div class="two-col">
+
+      <div>
+        <div class="section-label">Built-in Style</div>
+
+        <select id="presetStyle" onchange="applyPresetStyle()">
+          <option value="canonical_csv">Canonical CSV</option>
+          <option value="minimal_csv">Minimal CSV</option>
+          <option value="uig">UIG</option>
+          <option value="whitespace">Whitespace</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="section-label">Output Extension</div>
+
+        <input id="extensionInput" value="csv" />
+      </div>
+
+    </div>
+
+    <div class="two-col">
+
+      <div>
+        <div class="section-label">Delimiter</div>
+
+        <select id="delimiterInput">
+          <option value=",">Comma</option>
+          <option value="\t">Tab</option>
+          <option value="\s">Space</option>
+          <option value=";">Semicolon</option>
+          <option value="|">Pipe</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="section-label">Header Row</div>
+
+        <select id="headerInput">
+          <option value="true">Include Header</option>
+          <option value="false">No Header</option>
+        </select>
+      </div>
+
+    </div>
+
+    <div>
+      <div class="section-label">Galaxy Header Template</div>
+
+      <input
+        id="galaxyHeaderInput"
+        placeholder="Example: Galaxy name: {galaxy}"
+      />
+    </div>
+
+    <div>
+      <div class="section-label">File Preamble</div>
+
+      <textarea
+        id="preambleInput"
+        placeholder="Optional text placed at the beginning of cohort exports">
+      </textarea>
+    </div>
+
+    <h3>Columns</h3>
+
+    <div id="columnBuilder"></div>
+
+    <button
+      class="secondary"
+      onclick="addColumnRow()">
+      Add Column
+    </button>
+
+    <div class="button-row">
+
+      <button
+        class="primary"
+        onclick="runExport()">
+        Export
+      </button>
+
+      <button
+        class="secondary"
+        onclick="resetCustomStyle()">
+        Reset Builder
+      </button>
+
+    </div>
+
+    <div id="exportStatus" class="status"></div>
   </div>
 
 </section>
@@ -334,6 +499,18 @@ let selectedGalaxy = null;
 let selectedCurve = [];
 let selectedMeta = {};
 let selectedDiag = {};
+let selectedCohort = null;
+
+const exportFields = [
+  "radius_kpc",
+  "v_obs_kms",
+  "v_err_kms",
+  "v_gas_kms",
+  "v_disk_kms",
+  "v_bulge_kms",
+  "sb_disk",
+  "sb_bulge"
+];
 
 function showTab(id) {
 
@@ -346,11 +523,14 @@ function showTab(id) {
   document
     .getElementById(id)
     .classList.remove("hidden");
+
+  if (id === "export") {
+    refreshExportTarget();
+  }
 }
 
 
 function nativeAvailable() {
-
   return typeof AndroidBridge !== "undefined";
 }
 
@@ -381,10 +561,7 @@ function(jsonText) {
   let result = {};
 
   try {
-
-    result =
-      JSON.parse(jsonText);
-
+    result = JSON.parse(jsonText);
   } catch (e) {
 
     document
@@ -449,6 +626,8 @@ function loadCatalog() {
       );
 
   renderCatalog(catalog);
+
+  refreshExportTarget();
 }
 
 
@@ -559,17 +738,11 @@ function selectGalaxy(name) {
     .classList
     .remove("hidden");
 
-  document
-    .getElementById("exportGalaxyLabel")
-    .textContent =
-      "Selected galaxy: " +
-      name;
-
   renderMetrics();
-
   drawCurve();
-
   renderDiagnostics();
+
+  refreshExportTarget();
 }
 
 
@@ -600,10 +773,7 @@ function renderMetrics() {
 
   const values = [
 
-    [
-      "Points",
-      selectedCurve.length
-    ],
+    ["Points", selectedCurve.length],
 
     [
       "Distance",
@@ -884,30 +1054,11 @@ function drawCurve() {
       "line"
     );
 
-  axisX.setAttribute(
-    "x1",
-    left
-  );
-
-  axisX.setAttribute(
-    "y1",
-    height - bottom
-  );
-
-  axisX.setAttribute(
-    "x2",
-    width - right
-  );
-
-  axisX.setAttribute(
-    "y2",
-    height - bottom
-  );
-
-  axisX.setAttribute(
-    "stroke",
-    "#6b7280"
-  );
+  axisX.setAttribute("x1", left);
+  axisX.setAttribute("y1", height - bottom);
+  axisX.setAttribute("x2", width - right);
+  axisX.setAttribute("y2", height - bottom);
+  axisX.setAttribute("stroke", "#6b7280");
 
   svg.appendChild(axisX);
 
@@ -917,30 +1068,11 @@ function drawCurve() {
       "line"
     );
 
-  axisY.setAttribute(
-    "x1",
-    left
-  );
-
-  axisY.setAttribute(
-    "y1",
-    top
-  );
-
-  axisY.setAttribute(
-    "x2",
-    left
-  );
-
-  axisY.setAttribute(
-    "y2",
-    height - bottom
-  );
-
-  axisY.setAttribute(
-    "stroke",
-    "#6b7280"
-  );
+  axisY.setAttribute("x1", left);
+  axisY.setAttribute("y1", top);
+  axisY.setAttribute("x2", left);
+  axisY.setAttribute("y2", height - bottom);
+  axisY.setAttribute("stroke", "#6b7280");
 
   svg.appendChild(axisY);
 
@@ -1025,25 +1157,10 @@ function drawCurve() {
         "circle"
       );
 
-    c.setAttribute(
-      "cx",
-      x
-    );
-
-    c.setAttribute(
-      "cy",
-      y
-    );
-
-    c.setAttribute(
-      "r",
-      "3"
-    );
-
-    c.setAttribute(
-      "fill",
-      "#93c5fd"
-    );
+    c.setAttribute("cx", x);
+    c.setAttribute("cy", y);
+    c.setAttribute("r", "3");
+    c.setAttribute("fill", "#93c5fd");
 
     svg.appendChild(c);
   });
@@ -1066,6 +1183,9 @@ function loadCohort(name) {
 
     items = [];
   }
+
+  selectedCohort =
+    name;
 
   document
     .getElementById("cohortInfo")
@@ -1114,14 +1234,16 @@ function loadCohort(name) {
 
     list.appendChild(row);
   });
+
+  refreshExportTarget();
 }
 
 
-function exportSelectedGalaxy() {
+function exportSelectedGalaxyQuick() {
 
   const el =
     document.getElementById(
-      "exportStatus"
+      "quickExportStatus"
     );
 
   if (!selectedGalaxy) {
@@ -1146,7 +1268,609 @@ function exportSelectedGalaxy() {
 }
 
 
-function fmt(value, digits) {
+function refreshExportTarget() {
+
+  const type =
+    document
+      .getElementById(
+        "exportTargetType"
+      )
+      .value;
+
+  const target =
+    document
+      .getElementById(
+        "exportTarget"
+      );
+
+  target.innerHTML = "";
+
+  if (type === "galaxy") {
+
+    catalog.forEach(g => {
+
+      const option =
+        document.createElement(
+          "option"
+        );
+
+      option.value = g;
+      option.textContent = g;
+
+      if (g === selectedGalaxy) {
+        option.selected = true;
+      }
+
+      target.appendChild(option);
+    });
+
+  } else {
+
+    const cohorts = [
+      "quality_1",
+      "btfr_ready",
+      "bulgeless",
+      "extended_rotation_curve",
+      "inclination_safe",
+      "uig_benchmark_v1"
+    ];
+
+    cohorts.forEach(c => {
+
+      const option =
+        document.createElement(
+          "option"
+        );
+
+      option.value = c;
+      option.textContent = c;
+
+      if (c === selectedCohort) {
+        option.selected = true;
+      }
+
+      target.appendChild(option);
+    });
+  }
+}
+
+
+function addColumnRow(
+  source = "radius_kpc",
+  name = "radius_kpc",
+  scale = 1,
+  offset = 0,
+  decimals = -1
+) {
+
+  const holder =
+    document.getElementById(
+      "columnBuilder"
+    );
+
+  const row =
+    document.createElement(
+      "div"
+    );
+
+  row.className =
+    "export-row";
+
+  const sourceSelect =
+    document.createElement(
+      "select"
+    );
+
+  exportFields.forEach(field => {
+
+    const option =
+      document.createElement(
+        "option"
+      );
+
+    option.value = field;
+    option.textContent = field;
+
+    if (field === source) {
+      option.selected = true;
+    }
+
+    sourceSelect.appendChild(
+      option
+    );
+  });
+
+  const nameInput =
+    document.createElement(
+      "input"
+    );
+
+  nameInput.value =
+    name;
+
+  nameInput.placeholder =
+    "Column name";
+
+  const scaleInput =
+    document.createElement(
+      "input"
+    );
+
+  scaleInput.type =
+    "number";
+
+  scaleInput.step =
+    "any";
+
+  scaleInput.value =
+    scale;
+
+  const offsetInput =
+    document.createElement(
+      "input"
+    );
+
+  offsetInput.type =
+    "number";
+
+  offsetInput.step =
+    "any";
+
+  offsetInput.value =
+    offset;
+
+  const decimalsInput =
+    document.createElement(
+      "input"
+    );
+
+  decimalsInput.type =
+    "number";
+
+  decimalsInput.value =
+    decimals;
+
+  decimalsInput.min =
+    "-1";
+
+  const remove =
+    document.createElement(
+      "button"
+    );
+
+  remove.className =
+    "danger";
+
+  remove.textContent =
+    "Remove";
+
+  remove.onclick =
+    () => row.remove();
+
+  row.appendChild(sourceSelect);
+  row.appendChild(nameInput);
+  row.appendChild(scaleInput);
+  row.appendChild(offsetInput);
+  row.appendChild(decimalsInput);
+  row.appendChild(remove);
+
+  holder.appendChild(row);
+}
+
+
+function resetCustomStyle() {
+
+  document
+    .getElementById(
+      "columnBuilder"
+    )
+    .innerHTML =
+      "";
+
+  document
+    .getElementById(
+      "presetStyle"
+    )
+    .value =
+      "canonical_csv";
+
+  applyPresetStyle();
+}
+
+
+function applyPresetStyle() {
+
+  const preset =
+    document
+      .getElementById(
+        "presetStyle"
+      )
+      .value;
+
+  const holder =
+    document
+      .getElementById(
+        "columnBuilder"
+      );
+
+  holder.innerHTML = "";
+
+  if (preset === "minimal_csv") {
+
+    setExportControls(
+      ",",
+      "csv",
+      true,
+      "",
+      ""
+    );
+
+    addColumnRow(
+      "radius_kpc",
+      "radius_kpc"
+    );
+
+    addColumnRow(
+      "v_obs_kms",
+      "v_obs_kms"
+    );
+
+    addColumnRow(
+      "v_err_kms",
+      "v_err_kms"
+    );
+
+  } else if (preset === "uig") {
+
+    setExportControls(
+      ",",
+      "txt",
+      true,
+      "Galaxy name: {galaxy}",
+      ""
+    );
+
+    addColumnRow(
+      "radius_kpc",
+      "radius_kpc"
+    );
+
+    addColumnRow(
+      "v_obs_kms",
+      "v_obs"
+    );
+
+    addColumnRow(
+      "v_err_kms",
+      "v_err"
+    );
+
+    addColumnRow(
+      "v_gas_kms",
+      "v_gas"
+    );
+
+    addColumnRow(
+      "v_disk_kms",
+      "v_disk"
+    );
+
+    addColumnRow(
+      "v_bulge_kms",
+      "v_bulge"
+    );
+
+    addColumnRow(
+      "sb_disk",
+      "sb_disk"
+    );
+
+    addColumnRow(
+      "sb_bulge",
+      "sb_bulge"
+    );
+
+  } else if (preset === "whitespace") {
+
+    setExportControls(
+      "\\s",
+      "txt",
+      true,
+      "",
+      ""
+    );
+
+    addColumnRow(
+      "radius_kpc",
+      "r"
+    );
+
+    addColumnRow(
+      "v_obs_kms",
+      "vobs"
+    );
+
+    addColumnRow(
+      "v_err_kms",
+      "verr"
+    );
+
+    addColumnRow(
+      "v_gas_kms",
+      "vgas"
+    );
+
+    addColumnRow(
+      "v_disk_kms",
+      "vdisk"
+    );
+
+    addColumnRow(
+      "v_bulge_kms",
+      "vbulge"
+    );
+
+  } else {
+
+    setExportControls(
+      ",",
+      "csv",
+      true,
+      "",
+      ""
+    );
+
+    exportFields.forEach(
+      field =>
+        addColumnRow(
+          field,
+          field
+        )
+    );
+  }
+}
+
+
+function setExportControls(
+  delimiter,
+  extension,
+  header,
+  galaxyHeader,
+  preamble
+) {
+
+  document
+    .getElementById(
+      "delimiterInput"
+    )
+    .value =
+      delimiter;
+
+  document
+    .getElementById(
+      "extensionInput"
+    )
+    .value =
+      extension;
+
+  document
+    .getElementById(
+      "headerInput"
+    )
+    .value =
+      String(header);
+
+  document
+    .getElementById(
+      "galaxyHeaderInput"
+    )
+    .value =
+      galaxyHeader;
+
+  document
+    .getElementById(
+      "preambleInput"
+    )
+    .value =
+      preamble;
+}
+
+
+function buildCustomStyle() {
+
+  const style = {
+
+    name: "custom",
+
+    delimiter:
+      document
+        .getElementById(
+          "delimiterInput"
+        )
+        .value,
+
+    extension:
+      document
+        .getElementById(
+          "extensionInput"
+        )
+        .value
+        .trim() || "txt",
+
+    include_header:
+      document
+        .getElementById(
+          "headerInput"
+        )
+        .value === "true",
+
+    galaxy_header_template:
+      document
+        .getElementById(
+          "galaxyHeaderInput"
+        )
+        .value,
+
+    preamble:
+      document
+        .getElementById(
+          "preambleInput"
+        )
+        .value,
+
+    galaxy_separator:
+      "\n",
+
+    columns: []
+  };
+
+  document
+    .querySelectorAll(
+      "#columnBuilder .export-row"
+    )
+    .forEach(row => {
+
+      const fields =
+        row.children;
+
+      style.columns.push({
+
+        source:
+          fields[0].value,
+
+        name:
+          fields[1].value ||
+          fields[0].value,
+
+        scale:
+          Number(
+            fields[2].value || 1
+          ),
+
+        offset:
+          Number(
+            fields[3].value || 0
+          ),
+
+        decimals:
+          Number(
+            fields[4].value || -1
+          )
+      });
+    });
+
+  return style;
+}
+
+
+function runExport() {
+
+  const type =
+    document
+      .getElementById(
+        "exportTargetType"
+      )
+      .value;
+
+  const target =
+    document
+      .getElementById(
+        "exportTarget"
+      )
+      .value;
+
+  const preset =
+    document
+      .getElementById(
+        "presetStyle"
+      )
+      .value;
+
+  const status =
+    document
+      .getElementById(
+        "exportStatus"
+      );
+
+  if (!target) {
+
+    status.textContent =
+      "Choose a target first.";
+
+    return;
+  }
+
+  let result;
+
+  if (preset !== "custom") {
+
+    if (type === "galaxy") {
+
+      result =
+        AndroidBridge
+          .exportGalaxyPreset(
+            target,
+            preset
+          );
+
+    } else {
+
+      result =
+        AndroidBridge
+          .exportCohortPreset(
+            target,
+            preset
+          );
+    }
+
+  } else {
+
+    const style =
+      buildCustomStyle();
+
+    if (!style.columns.length) {
+
+      status.textContent =
+        "Add at least one column.";
+
+      return;
+    }
+
+    const json =
+      JSON.stringify(style);
+
+    if (type === "galaxy") {
+
+      result =
+        AndroidBridge
+          .exportGalaxyWithStyle(
+            target,
+            json
+          );
+
+    } else {
+
+      result =
+        AndroidBridge
+          .exportCohortWithStyle(
+            target,
+            json
+          );
+    }
+  }
+
+  status.textContent =
+    result.startsWith("ERROR:")
+      ? result
+      : "Saved to:\n" +
+        result;
+}
+
+
+function fmt(
+  value,
+  digits
+) {
 
   const x =
     Number(value);
@@ -1156,7 +1880,10 @@ function fmt(value, digits) {
     : "—";
 }
 
+
+applyPresetStyle();
+
 </script>
 
 </body>
-  </html>
+</html>
