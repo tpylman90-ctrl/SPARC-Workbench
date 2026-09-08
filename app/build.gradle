@@ -10,13 +10,27 @@ android {
         applicationId 'org.sparcworkbench.app'
         minSdk 26
         targetSdk 35
-        versionCode 18
-        versionName '1.4.2'
+        versionCode 19
+        versionName '1.4.3'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("SPARC_KEYSTORE_PATH") ?: "sparc-workbench-release.jks")
+            storePassword System.getenv("SPARC_KEYSTORE_PASSWORD")
+            keyAlias System.getenv("SPARC_KEY_ALIAS")
+            keyPassword System.getenv("SPARC_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
+
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
         }
     }
 }
