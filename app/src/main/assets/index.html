@@ -96,10 +96,6 @@
       display: none !important;
     }
 
-    /* ==========================================================
-       STARTUP SCREEN
-       ========================================================== */
-
     #startupScreen {
       position: fixed;
       inset: 0;
@@ -174,10 +170,6 @@
     #startupErrorActions {
       margin-top: 18px;
     }
-
-    /* ==========================================================
-       APP SHELL
-       ========================================================== */
 
     #appShell {
       min-height: 100vh;
@@ -315,6 +307,13 @@
       margin-top: 10px;
     }
 
+    .three-button-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
     .section-label {
       font-size: 12px;
       color: #9ca3af;
@@ -331,9 +330,24 @@
       color: #93c5fd;
     }
 
-    /* ==========================================================
-       COMPACT EXPORT COLUMNS
-       ========================================================== */
+    .preset-panel {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .preset-panel h3 {
+      margin-bottom: 8px;
+    }
+
+    .preset-note {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
 
     .column-card {
       background: #111827;
@@ -474,7 +488,8 @@
 
     @media (max-width: 540px) {
       .two-col,
-      .column-editor-grid {
+      .column-editor-grid,
+      .three-button-row {
         grid-template-columns: 1fr;
       }
 
@@ -768,6 +783,71 @@
           Choose a built-in format or configure
           an output schema for another model.
         </p>
+
+
+        <div class="preset-panel">
+
+          <h3>
+            Saved Presets
+          </h3>
+
+          <div class="preset-note">
+            Save custom schemas under a name and reuse
+            them across future app sessions.
+          </div>
+
+          <div class="section-label">
+            Preset Name
+          </div>
+
+          <input
+            id="savedPresetName"
+            placeholder="Example: UIG v2 or Publication CSV"
+          />
+
+          <div class="section-label">
+            Saved Presets
+          </div>
+
+          <select id="savedPresetSelect">
+
+            <option value="">
+              No saved presets
+            </option>
+
+          </select>
+
+          <div class="three-button-row">
+
+            <button
+              class="primary"
+              onclick="saveNamedPreset()">
+
+              Save Preset
+            </button>
+
+            <button
+              class="secondary"
+              onclick="loadNamedPreset()">
+
+              Load Preset
+            </button>
+
+            <button
+              class="danger"
+              onclick="deleteNamedPreset()">
+
+              Delete Preset
+            </button>
+
+          </div>
+
+          <div
+            id="presetStatus"
+            class="status">
+          </div>
+
+        </div>
 
 
         <div class="two-col">
@@ -1078,11 +1158,9 @@ let selectedMeta = {};
 let selectedDiag = {};
 
 let selectedCohort = null;
-
 let activeTab = "explore";
 
 let restoringSession = false;
-
 let bootstrapped = false;
 
 
@@ -1178,6 +1256,7 @@ function beginBootstrap() {
 
 
 function retryBootstrap() {
+
   beginBootstrap();
 }
 
@@ -1247,6 +1326,8 @@ function(jsonText) {
   );
 
   loadCatalog();
+
+  refreshSavedPresetList();
 
   const state =
     result.data_state ||
@@ -1410,6 +1491,311 @@ function(jsonText) {
 
 
 /* ==============================================================
+   SAVED NAMED PRESETS
+   ============================================================== */
+
+function refreshSavedPresetList() {
+
+  const select =
+    document.getElementById(
+      "savedPresetSelect"
+    );
+
+  const previous =
+    select.value;
+
+  let names = [];
+
+  try {
+
+    names =
+      JSON.parse(
+        AndroidBridge
+          .listSavedExportPresets()
+      );
+
+  } catch (e) {
+
+    names = [];
+  }
+
+  names.sort(
+    (a, b) =>
+      String(a)
+        .localeCompare(
+          String(b)
+        )
+  );
+
+  select.innerHTML =
+    "";
+
+  const empty =
+    document.createElement(
+      "option"
+    );
+
+  empty.value =
+    "";
+
+  empty.textContent =
+    names.length
+      ? "Choose a saved preset"
+      : "No saved presets";
+
+  select.appendChild(
+    empty
+  );
+
+  names.forEach(
+    name => {
+
+      const option =
+        document.createElement(
+          "option"
+        );
+
+      option.value =
+        name;
+
+      option.textContent =
+        name;
+
+      select.appendChild(
+        option
+      );
+    }
+  );
+
+  if (
+    previous &&
+    names.includes(
+      previous
+    )
+  ) {
+
+    select.value =
+      previous;
+  }
+}
+
+
+function saveNamedPreset() {
+
+  const name =
+    document
+      .getElementById(
+        "savedPresetName"
+      )
+      .value
+      .trim();
+
+  const status =
+    document.getElementById(
+      "presetStatus"
+    );
+
+  if (!name) {
+
+    status.textContent =
+      "Enter a preset name first.";
+
+    return;
+  }
+
+  const style =
+    buildCustomStyle();
+
+  if (
+    !style.columns.length
+  ) {
+
+    status.textContent =
+      "The preset needs at least one column.";
+
+    return;
+  }
+
+  style.name =
+    name;
+
+  const result =
+    AndroidBridge
+      .saveExportPreset(
+        name,
+        JSON.stringify(
+          style
+        )
+      );
+
+  if (
+    result.startsWith(
+      "ERROR:"
+    )
+  ) {
+
+    status.textContent =
+      result;
+
+    return;
+  }
+
+  refreshSavedPresetList();
+
+  document
+    .getElementById(
+      "savedPresetSelect"
+    )
+    .value =
+      name;
+
+  status.textContent =
+    'Preset "' +
+    name +
+    '" saved.';
+
+  saveSession();
+}
+
+
+function loadNamedPreset() {
+
+  const name =
+    document
+      .getElementById(
+        "savedPresetSelect"
+      )
+      .value;
+
+  const status =
+    document.getElementById(
+      "presetStatus"
+    );
+
+  if (!name) {
+
+    status.textContent =
+      "Choose a saved preset first.";
+
+    return;
+  }
+
+  const json =
+    AndroidBridge
+      .getExportPreset(
+        name
+      );
+
+  if (!json) {
+
+    status.textContent =
+      "Saved preset could not be found.";
+
+    refreshSavedPresetList();
+
+    return;
+  }
+
+  try {
+
+    const style =
+      JSON.parse(
+        json
+      );
+
+    restoringSession =
+      true;
+
+    applyStyleObject(
+      style
+    );
+
+    restoringSession =
+      false;
+
+    document
+      .getElementById(
+        "savedPresetName"
+      )
+      .value =
+        name;
+
+    status.textContent =
+      'Preset "' +
+      name +
+      '" loaded.';
+
+    saveSession();
+
+  } catch (e) {
+
+    restoringSession =
+      false;
+
+    status.textContent =
+      "Could not parse saved preset.";
+  }
+}
+
+
+function deleteNamedPreset() {
+
+  const select =
+    document.getElementById(
+      "savedPresetSelect"
+    );
+
+  const name =
+    select.value;
+
+  const status =
+    document.getElementById(
+      "presetStatus"
+    );
+
+  if (!name) {
+
+    status.textContent =
+      "Choose a saved preset first.";
+
+    return;
+  }
+
+  const result =
+    AndroidBridge
+      .deleteExportPreset(
+        name
+      );
+
+  if (
+    result.startsWith(
+      "ERROR:"
+    )
+  ) {
+
+    status.textContent =
+      result;
+
+    return;
+  }
+
+  refreshSavedPresetList();
+
+  document
+    .getElementById(
+      "savedPresetName"
+    )
+    .value =
+      "";
+
+  status.textContent =
+    'Preset "' +
+    name +
+    '" deleted.';
+}
+
+
+/* ==============================================================
    SESSION STATE
    ============================================================== */
 
@@ -1461,6 +1847,13 @@ function saveSession() {
         document
           .getElementById(
             "presetStyle"
+          )
+          .value,
+
+      saved_preset:
+        document
+          .getElementById(
+            "savedPresetSelect"
           )
           .value,
 
@@ -1559,6 +1952,16 @@ function restoreSession(state) {
         setSelectValueIfPresent(
           "exportTarget",
           state.export_target
+        );
+      }
+
+      if (
+        state.saved_preset
+      ) {
+
+        setSelectValueIfPresent(
+          "savedPresetSelect",
+          state.saved_preset
         );
       }
 
@@ -1725,6 +2128,7 @@ function showTab(
   if (id === "export") {
 
     refreshExportTarget();
+    refreshSavedPresetList();
   }
 
   if (persist) {
@@ -2290,33 +2694,11 @@ function drawCurve() {
       "line"
     );
 
-  axisX.setAttribute(
-    "x1",
-    left
-  );
-
-  axisX.setAttribute(
-    "y1",
-    height -
-    bottom
-  );
-
-  axisX.setAttribute(
-    "x2",
-    width -
-    right
-  );
-
-  axisX.setAttribute(
-    "y2",
-    height -
-    bottom
-  );
-
-  axisX.setAttribute(
-    "stroke",
-    "#6b7280"
-  );
+  axisX.setAttribute("x1", left);
+  axisX.setAttribute("y1", height - bottom);
+  axisX.setAttribute("x2", width - right);
+  axisX.setAttribute("y2", height - bottom);
+  axisX.setAttribute("stroke", "#6b7280");
 
   svg.appendChild(
     axisX
@@ -2328,31 +2710,11 @@ function drawCurve() {
       "line"
     );
 
-  axisY.setAttribute(
-    "x1",
-    left
-  );
-
-  axisY.setAttribute(
-    "y1",
-    top
-  );
-
-  axisY.setAttribute(
-    "x2",
-    left
-  );
-
-  axisY.setAttribute(
-    "y2",
-    height -
-    bottom
-  );
-
-  axisY.setAttribute(
-    "stroke",
-    "#6b7280"
-  );
+  axisY.setAttribute("x1", left);
+  axisY.setAttribute("y1", top);
+  axisY.setAttribute("x2", left);
+  axisY.setAttribute("y2", height - bottom);
+  axisY.setAttribute("stroke", "#6b7280");
 
   svg.appendChild(
     axisY
@@ -2453,25 +2815,10 @@ function drawCurve() {
           "circle"
         );
 
-      c.setAttribute(
-        "cx",
-        x
-      );
-
-      c.setAttribute(
-        "cy",
-        y
-      );
-
-      c.setAttribute(
-        "r",
-        "3"
-      );
-
-      c.setAttribute(
-        "fill",
-        "#93c5fd"
-      );
+      c.setAttribute("cx", x);
+      c.setAttribute("cy", y);
+      c.setAttribute("r", "3");
+      c.setAttribute("fill", "#93c5fd");
 
       svg.appendChild(
         c
@@ -3260,7 +3607,7 @@ function markBuilderCustom() {
 
 
 /* ==============================================================
-   EXPORT PRESETS
+   BUILT-IN EXPORT PRESETS
    ============================================================== */
 
 function resetCustomStyle() {
