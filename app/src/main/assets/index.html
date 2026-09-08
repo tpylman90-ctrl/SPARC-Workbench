@@ -341,6 +341,15 @@
       border-radius: 12px;
       margin-bottom: 9px;
       overflow: hidden;
+      transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+    }
+
+    .column-card.renamed {
+      border-color: #d97706;
+      box-shadow:
+        0 0 0 1px rgba(217, 119, 6, 0.12);
     }
 
     .column-summary {
@@ -360,10 +369,45 @@
       min-width: 0;
     }
 
+    .column-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
     .column-title {
       font-size: 15px;
       font-weight: 700;
       overflow-wrap: anywhere;
+    }
+
+    .column-badge {
+      display: none;
+      padding: 3px 6px;
+      border-radius: 999px;
+      background: #78350f;
+      border: 1px solid #b45309;
+      color: #fde68a;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+    }
+
+    .column-card.renamed .column-badge {
+      display: inline-block;
+    }
+
+    .column-mapping {
+      margin-top: 5px;
+      color: #93c5fd;
+      font-size: 13px;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .column-card.renamed .column-mapping {
+      color: #fbbf24;
     }
 
     .column-subtitle {
@@ -443,10 +487,6 @@
 
 <body>
 
-<!-- ============================================================
-     STARTUP SCREEN
-     ============================================================ -->
-
 <div id="startupScreen">
 
   <div class="startup-card">
@@ -489,10 +529,6 @@
 
 </div>
 
-
-<!-- ============================================================
-     APP SHELL
-     ============================================================ -->
 
 <div
   id="appShell"
@@ -546,10 +582,6 @@
 
 
   <main>
-
-    <!-- ========================================================
-         EXPLORE
-         ======================================================== -->
 
     <section id="explore">
 
@@ -667,10 +699,6 @@
     </section>
 
 
-    <!-- ========================================================
-         COHORTS
-         ======================================================== -->
-
     <section
       id="cohorts"
       class="hidden">
@@ -725,10 +753,6 @@
 
     </section>
 
-
-    <!-- ========================================================
-         EXPORT
-         ======================================================== -->
 
     <section
       id="export"
@@ -959,8 +983,8 @@
         </h3>
 
         <div class="export-help">
-          Tap a column to expand its source, name,
-          scale, offset, and decimal settings.
+          Each card shows the exact source → output mapping.
+          Renamed fields are highlighted.
         </div>
 
         <div id="columnBuilder">
@@ -1017,10 +1041,6 @@
 
     </section>
 
-
-    <!-- ========================================================
-         DATA HEALTH
-         ======================================================== -->
 
     <section
       id="health"
@@ -1158,7 +1178,6 @@ function beginBootstrap() {
 
 
 function retryBootstrap() {
-
   beginBootstrap();
 }
 
@@ -1960,10 +1979,7 @@ function renderMetrics() {
 
   const values = [
 
-    [
-      "Points",
-      selectedCurve.length
-    ],
+    ["Points", selectedCurve.length],
 
     [
       "Distance",
@@ -2216,29 +2232,15 @@ function drawCurve() {
     return;
   }
 
-  const width =
-    600;
+  const width = 600;
+  const height = 260;
+  const left = 45;
+  const right = 15;
+  const top = 15;
+  const bottom = 35;
 
-  const height =
-    260;
-
-  const left =
-    45;
-
-  const right =
-    15;
-
-  const top =
-    15;
-
-  const bottom =
-    35;
-
-  let maxR =
-    0;
-
-  let maxV =
-    0;
+  let maxR = 0;
+  let maxV = 0;
 
   selectedCurve.forEach(
     r => {
@@ -2720,7 +2722,7 @@ function refreshExportTarget() {
 
 
 /* ==============================================================
-   COMPACT EXPORT COLUMN BUILDER
+   EXPORT COLUMN BUILDER
    ============================================================== */
 
 function addColumnRow(
@@ -2766,6 +2768,14 @@ function addColumnRow(
   main.className =
     "column-main";
 
+  const titleRow =
+    document.createElement(
+      "div"
+    );
+
+  titleRow.className =
+    "column-title-row";
+
   const title =
     document.createElement(
       "div"
@@ -2773,6 +2783,33 @@ function addColumnRow(
 
   title.className =
     "column-title";
+
+  const badge =
+    document.createElement(
+      "span"
+    );
+
+  badge.className =
+    "column-badge";
+
+  badge.textContent =
+    "RENAMED";
+
+  titleRow.appendChild(
+    title
+  );
+
+  titleRow.appendChild(
+    badge
+  );
+
+  const mapping =
+    document.createElement(
+      "div"
+    );
+
+  mapping.className =
+    "column-mapping";
 
   const subtitle =
     document.createElement(
@@ -2783,7 +2820,11 @@ function addColumnRow(
     "column-subtitle";
 
   main.appendChild(
-    title
+    titleRow
+  );
+
+  main.appendChild(
+    mapping
   );
 
   main.appendChild(
@@ -3035,13 +3076,14 @@ function addColumnRow(
   card._decimalsInput =
     decimalsInput;
 
+
   function refreshSummary() {
 
     const currentSource =
       sourceSelect.value;
 
     const currentName =
-      nameInput.value ||
+      nameInput.value.trim() ||
       currentSource;
 
     const currentScale =
@@ -3062,29 +3104,36 @@ function addColumnRow(
         -1
       );
 
+    const renamed =
+      currentSource !==
+      currentName;
+
     title.textContent =
       currentName;
 
+    mapping.textContent =
+      currentSource +
+      " → " +
+      currentName;
+
+    if (renamed) {
+
+      card.classList.add(
+        "renamed"
+      );
+
+    } else {
+
+      card.classList.remove(
+        "renamed"
+      );
+    }
+
     let detail =
-      currentSource;
-
-    if (
-      currentScale !== 1
-    ) {
-
-      detail +=
-        " • scale " +
-        currentScale;
-    }
-
-    if (
-      currentOffset !== 0
-    ) {
-
-      detail +=
-        " • offset " +
-        currentOffset;
-    }
+      "scale " +
+      currentScale +
+      " • offset " +
+      currentOffset;
 
     detail +=
       currentDecimals >= 0
@@ -3097,12 +3146,16 @@ function addColumnRow(
       detail;
   }
 
+
   function changed() {
 
     refreshSummary();
+
     markBuilderCustom();
+
     saveSession();
   }
+
 
   sourceSelect.onchange =
     changed;
@@ -3119,6 +3172,7 @@ function addColumnRow(
   decimalsInput.oninput =
     changed;
 
+
   summary.onclick =
     () => {
 
@@ -3126,6 +3180,7 @@ function addColumnRow(
         "expanded"
       );
     };
+
 
   remove.onclick =
     () => {
@@ -3136,6 +3191,7 @@ function addColumnRow(
 
       saveSession();
     };
+
 
   refreshSummary();
 
